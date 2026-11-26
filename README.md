@@ -9,7 +9,7 @@ A live map of construction projects. Each time the page opens it asks the sheet'
 A dropdown at the top left switches between sheets. Each has its own link:
 
 - Austin Metro: https://den-perez.github.io/kris-map/?sheet=austin (default)
-- US: coming once its web app is deployed
+- US: https://den-perez.github.io/kris-map/?sheet=us
 
 The sheet needs an `Address` column. A name column can be `Name` or `Project Name`; a tier column can be `Tier / Priority` or `Tier`. An Address written as `lat, lng` (e.g. `31.80693, -106.6574`) is used as the pin location directly.
 
