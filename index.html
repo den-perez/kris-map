@@ -85,8 +85,8 @@ Papa.parse(src, {
       overlays[`<span class="swatch" style="background:${LAYERS[i][1]}"></span>${LAYERS[i][0]} (${g.getLayers().length})`] = g;
     });
     L.control.layers(null, overlays, { collapsed: window.innerWidth < 700 }).addTo(map);
-    const all = L.featureGroup(groups);
-    if (all.getLayers().length) map.fitBounds(all.getBounds(), { padding: [20, 20] });
+    const bounds = L.featureGroup(groups).getBounds(); // invalid when no row has coordinates yet
+    if (bounds.isValid()) map.fitBounds(bounds, { padding: [20, 20] });
     status.textContent = missing ? `${missing} of ${data.length} rows have no Lat/Lng yet. Run Map → Fill coordinates in the sheet.` : '';
   },
   error() { status.textContent = 'Could not load the sheet.'; },
