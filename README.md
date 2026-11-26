@@ -34,6 +34,8 @@ Rows whose address can't be found get `not found` in `Lat`. Fix the address, cle
 
 **Changing the script later:** saving isn't enough for the web app. Use **Deploy → Manage deployments → Edit (pencil) → Version: New version → Deploy**. That keeps the same URL.
 
+**Caching:** the web app keeps a copy of the data for 10 minutes so most map loads skip reading the sheet. Typing in the Master tab, Fill coordinates and Import coordinates clear that copy, so those changes show on the next refresh. Changes that don't come from typing (another sheet's `IMPORTRANGE`, a formula recalculating, edits through other tools) can take up to 10 minutes to appear.
+
 ## What the map can see
 
 Only the columns in `PUBLIC_COLUMNS` at the top of `apps-script.gs` leave the sheet: names, address, category, tier, status, zone, dates, contractor, value, notes, icon and coordinates. Other columns and other tabs stay private. To hide a column (for example `Notes`), remove it from that list and redeploy as above.
