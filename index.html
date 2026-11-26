@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Austin Metro Projects Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="">
+<style>
+  html, body, #map { height: 100%; margin: 0; }
+  body { font: 14px/1.4 system-ui, -apple-system, sans-serif; }
+  #status { position: absolute; z-index: 1000; left: 50%; bottom: 24px; transform: translateX(-50%);
+    background: #fff; padding: 6px 12px; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.3); }
+  #status:empty { display: none; }
+  .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; border: 1px solid #0003; }
+  .leaflet-popup-content { max-width: 320px; }
+  .leaflet-popup-content h3 { margin: 0 0 6px; font-size: 15px; }
+  .leaflet-popup-content dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; }
+  .leaflet-popup-content dt { color: #666; }
+  .leaflet-popup-content dd { margin: 0; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="status" role="status">Loading sheet…</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin=""></script>
+<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js" integrity="sha384-D/t0ZMqQW31H3az8ktEiNb39wyKnS82iFY52QPACM+IjKW3jDUhyIgh2PApRqJZs" crossorigin=""></script>
+<script>
+// Master tab of the sheet. The plain CSV export, not gviz: gviz blanks cells in mixed-type columns.
+const SHEET_CSV = 'https://docs.google.com/spreadsheets/d/1cZ0wL_EDfmaPvG-va7Qdzf1cFpT4v2Pg1HvDBWW8fqk/export?format=csv&gid=960862609';
+
+const LAYERS = [
+  ['Tier 1 ($1B+)',          '#d7263d'],
+  ['Tier 2 ($500M–1B)',      '#f46036'],
+  ['Tier 3 ($100–500M)',     '#e2a400'],
+  ['Tier 4 / No Value',      '#2e86ab'],
+  ['Facility Accounts',      '#6a4c93'],
+  ['Contractors',            '#3d8b37'],
+];
+const FIELDS = ['Record Type', 'Category', 'Tier / Priority', 'Status', 'Zone', 'Address',
+  'Start Date', 'End Date', 'General Contractor', 'Project Value', 'Notes'];
+
+function layerFor(r) {
+  const type = (r['Record Type'] || '').toLowerCase();
+  if (type.startsWith('facility')) return 4;
+  if (type.startsWith('contractor')) return 5;
+  const tier = r['Tier / Priority'] || '';
+  return tier === 'Tier 1' ? 0 : tier === 'Tier 2' ? 1 : tier === 'Tier 3' ? 2 : 3;
+}
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function popup(r) {
+  const rows = FIELDS.filter(f => (r[f] || '').trim())
+    .map(f => `<dt>${esc(f)}</dt><dd>${esc(r[f])}</dd>`).join('');
+  return `<h3>${esc(r['Name'] || 'Untitled')}</h3><dl>${rows}</dl>`;
+}
+
+const map = L.map('map').setView([30.45, -97.52], 10);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors', maxZoom: 19,
+}).addTo(map);
+
+const status = document.getElementById('status');
+const src = new URLSearchParams(location.search).get('src') || SHEET_CSV; // ?src= lets you test with a local CSV
+
+Papa.parse(src, {
+  download: true, header: true, skipEmptyLines: true,
+  complete({ data }) {
+    if (!data.length || !('Name' in data[0])) {
+      status.textContent = 'Could not read the sheet. Is it still shared as "Anyone with the link"?';
+      return;
+    }
+    const groups = LAYERS.map(() => L.featureGroup());
+    let missing = 0;
+    for (const r of data) {
+      const lat = parseFloat(r.Lat), lng = parseFloat(r.Lng);
+      if (!isFinite(lat) || !isFinite(lng)) { missing++; continue; }
+      const i = layerFor(r);
+      L.circleMarker([lat, lng], { radius: 7, color: '#fff', weight: 1.5, fillColor: LAYERS[i][1], fillOpacity: .9 })
+        .bindPopup(popup(r)).addTo(groups[i]);
+    }
+    const overlays = {};
+    groups.forEach((g, i) => {
+      g.addTo(map);
+      overlays[`<span class="swatch" style="background:${LAYERS[i][1]}"></span>${LAYERS[i][0]} (${g.getLayers().length})`] = g;
+    });
+    L.control.layers(null, overlays, { collapsed: window.innerWidth < 700 }).addTo(map);
+    const all = L.featureGroup(groups);
+    if (all.getLayers().length) map.fitBounds(all.getBounds(), { padding: [20, 20] });
+    status.textContent = missing ? `${missing} of ${data.length} rows have no Lat/Lng yet. Run Map → Fill coordinates in the sheet.` : '';
+  },
+  error() { status.textContent = 'Could not load the sheet.'; },
+});
+</script>
+</body>
+</html>
