@@ -35,6 +35,8 @@ function fillCoordinates() {
     for (let i = 0; i < n; i++) {
       const address = String(addresses[i][0]).trim();
       if (!address || coords[i][0] !== '') continue; // only blank rows; clear a cell to redo it
+      const ll = /^\s*(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*$/.exec(address); // Address already "lat, lng"
+      if (ll) { coords[i] = [Number(ll[1]), Number(ll[2])]; filled++; continue; }
       if (stopped || Date.now() - start > TIME_LIMIT_MS) { left++; continue; }
       try {
         const hit = geocodeWithRetry(geocoder, address);

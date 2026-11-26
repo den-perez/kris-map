@@ -1,8 +1,19 @@
 # kris-map
 
-A live map of Austin Metro projects. It reads the **Master** tab of the Google Sheet each time the page opens, so edits to the sheet show up on the next refresh.
+A live map of construction projects. It reads the **Master** tab of a Google Sheet each time the page opens, so edits to the sheet show up on the next refresh.
 
 **Map:** https://den-perez.github.io/kris-map/
+
+## Sheets
+
+A dropdown at the top left switches between sheets. Each has its own link:
+
+- Austin Metro: https://den-perez.github.io/kris-map/?sheet=austin (default)
+- US: https://den-perez.github.io/kris-map/?sheet=us
+
+To add a sheet: share it as "Anyone with the link can view", open its Master tab, and copy the long id from the URL (`/d/<id>/edit`) and the number after `gid=`. Add a line to `SHEETS` near the top of the script in `index.html`. Then install the Apps Script below in that sheet too.
+
+The sheet needs an `Address` column. A name column can be `Name` or `Project Name`; a tier column can be `Tier / Priority` or `Tier`. An Address written as `lat, lng` (e.g. `31.80693, -106.6574`) is used as the pin location directly.
 
 ## How it works
 
