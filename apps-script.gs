@@ -11,6 +11,44 @@ const PUBLIC_COLUMNS = ['Name', 'Project Name', 'Record Type', 'Category', 'Tier
   'Notes', 'Icon', 'Lat', 'Lng'];
 
 function doGet() {
+  return ContentService.createTextOutput(cachedRowsJson()).setMimeType(ContentService.MimeType.JSON);
+}
+
+// The map's data is kept in Apps Script's cache so most page loads skip reading the sheet.
+// Editing Master clears it (onEdit below); otherwise it refreshes after CACHE_SECONDS.
+const CACHE_SECONDS = 600;
+const CACHE_CHUNK = 45000; // a cached value can be at most 100 KB; characters can take 2 bytes
+
+function cachedRowsJson() {
+  const cache = CacheService.getScriptCache();
+  const head = cache.get('rows'); // "<version>:<pieces>"
+  if (head) {
+    const [ver, n] = head.split(':');
+    const keys = Array.from({ length: Number(n) }, (_, i) => `rows_${ver}_${i}`);
+    const parts = cache.getAll(keys);
+    if (keys.every(k => k in parts)) return keys.map(k => parts[k]).join('');
+  }
+  const json = JSON.stringify(readRows());
+  const ver = Date.now().toString(36);
+  const put = {};
+  for (let i = 0; i * CACHE_CHUNK < json.length; i++) put[`rows_${ver}_${i}`] = json.slice(i * CACHE_CHUNK, (i + 1) * CACHE_CHUNK);
+  try {
+    cache.putAll(put, CACHE_SECONDS);
+    cache.put('rows', `${ver}:${Object.keys(put).length}`, CACHE_SECONDS); // written last, so readers never see half a version
+  } catch (e) { /* too big for the cache: serve it uncached */ }
+  return json;
+}
+
+function clearMapCache() {
+  CacheService.getScriptCache().remove('rows');
+}
+
+// Simple trigger: any hand edit on Master makes the next map load read the sheet fresh.
+function onEdit(e) {
+  if (e && e.range.getSheet().getName() === TAB) clearMapCache();
+}
+
+function readRows() {
   const range = SpreadsheetApp.getActive().getSheetByName(TAB).getDataRange();
   const shown = range.getDisplayValues(); // text as it appears in the sheet ("Nov 2026", "20B")
   const raw = range.getValues();          // full-precision numbers for Lat/Lng
@@ -21,7 +59,7 @@ function doGet() {
     for (const [h, i] of cols) row[h] = (h === 'Lat' || h === 'Lng') ? raw[r][i] : shown[r][i];
     if (Object.values(row).some(v => v !== '')) rows.push(row);
   }
-  return ContentService.createTextOutput(JSON.stringify(rows)).setMimeType(ContentService.MimeType.JSON);
+  return rows;
 }
 const TIME_LIMIT_MS = 5 * 60 * 1000; // Apps Script stops at 6 min; leave room to save.
 
@@ -60,6 +98,7 @@ function importCoordinates() {
     if (hit) { coords[i] = hit; filled++; }
   }
   coordsRange.setValues(coords);
+  clearMapCache(); // script writes don't fire onEdit
   ss.toast(`Filled ${filled} rows from "${source.getName()}". You can delete that tab now.`, 'Map', 30);
 }
 
@@ -103,6 +142,7 @@ function fillCoordinates() {
     }
   } finally {
     coordsRange.setValues(coords); // save progress even if something above throws
+    clearMapCache(); // script writes don't fire onEdit
   }
   SpreadsheetApp.getActive().toast(
     `Filled ${filled}. Not found: ${notFound}.` + (left ? ` ${left} left, run it again${stopped ? ' later' : ''}.` : '') +
