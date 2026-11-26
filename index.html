@@ -29,13 +29,12 @@
 <div id="map"></div>
 <div id="status" role="status">Loading sheet…</div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin=""></script>
-<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js" integrity="sha384-D/t0ZMqQW31H3az8ktEiNb39wyKnS82iFY52QPACM+IjKW3jDUhyIgh2PApRqJZs" crossorigin=""></script>
 <script>
-// Sheets in the switcher: [key used in ?sheet=, label, spreadsheet id, gid of its Master tab].
-// The first one is the default. Reads the plain CSV export, not gviz: gviz blanks cells in mixed-type columns.
+// Sheets in the switcher: [key used in ?sheet=, label, web app URL from that sheet's Apps Script deployment].
+// The first one is the default. The web app returns only the map's columns, so the sheet itself stays private.
 const SHEETS = [
-  ['austin', 'Austin Metro', '1cZ0wL_EDfmaPvG-va7Qdzf1cFpT4v2Pg1HvDBWW8fqk', '960862609'],
-  ['us',     'US',           '1El4yT0682AQivowe6Jjg113jXQi2FfValuZowF2qfqg', '2101079089'],
+  ['austin', 'Austin Metro', 'https://script.google.com/macros/s/AKfycbw2MlHBmuSZD5E-EsFiYWepOEqvryS6CUNzRMEpRWnSMvvwcDjvDF0VW-g5N9V78qm6/exec'],
+  // ['us',  'US',           'US_WEB_APP_URL'], // add back once the US sheet's web app is deployed
 ];
 
 // [label, pin color, icon color] — pin colors match the original My Maps.
@@ -122,8 +121,7 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
 const status = document.getElementById('status');
 const params = new URLSearchParams(location.search);
 const sheet = SHEETS.find(s => s[0] === params.get('sheet')) || SHEETS[0];
-const src = params.get('src') || // ?src= lets you test with a local CSV
-  `https://docs.google.com/spreadsheets/d/${sheet[2]}/export?format=csv&gid=${sheet[3]}`;
+const src = params.get('src') || sheet[2]; // ?src= lets you test with a local JSON file
 document.title = `${sheet[1]} Projects Map`;
 
 // Sheet switcher: reloads the page with ?sheet=<key>, so each view has its own shareable link.
@@ -148,11 +146,11 @@ function normalize(r) {
   return r;
 }
 
-Papa.parse(src, {
-  download: true, header: true, skipEmptyLines: true,
-  complete({ data }) {
-    if (!data.length || !('Address' in data[0])) {
-      status.textContent = 'Could not read the sheet. Is it still shared as "Anyone with the link"?';
+fetch(src)
+  .then(res => { if (!res.ok) throw new Error(res.status); return res.json(); })
+  .then(data => {
+    if (!Array.isArray(data) || !data.length || !('Address' in data[0])) {
+      status.textContent = 'The sheet returned no projects. Check its Master tab has an Address column.';
       return;
     }
     const groups = LAYERS.map(() => L.featureGroup());
@@ -174,9 +172,9 @@ Papa.parse(src, {
     const bounds = L.featureGroup(groups).getBounds(); // invalid when no row has coordinates yet
     if (bounds.isValid()) map.fitBounds(bounds, { padding: [20, 20] });
     status.textContent = missing ? `${missing} of ${data.length} rows have no Lat/Lng yet. Run Map → Fill coordinates in the sheet.` : '';
-  },
-  error() { status.textContent = 'Could not load the sheet.'; },
-});
+  })
+  // A web app error comes back as an HTML page, so res.json() lands here too.
+  .catch(() => { status.textContent = 'Could not load the sheet. Is its web app deployed with access "Anyone"?'; });
 </script>
 </body>
 </html>
