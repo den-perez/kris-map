@@ -7,7 +7,16 @@ A live map of Austin Metro projects. It reads the **Master** tab of the Google S
 ## How it works
 
 - `index.html` loads the Master tab as CSV and draws one pin per row that has `Lat` and `Lng`.
-- Layers come from `Record Type` and `Tier / Priority`: Tier 1–4, Facility Accounts, Contractors.
+- Layers come from `Record Type` and `Tier / Priority`: Tier 1–4, Facility Accounts, Contractors. A row whose `Status` contains "Completed" or "Cancelled" goes to the Completed/Cancelled layer instead. Pin colors match the original My Maps.
+- The icon inside each pin comes from `Category` (factory for Manufacturing, school for Education, and so on).
+
+## Choosing an icon for a row
+
+Add a column named `Icon` to Master (anywhere). Type one of these names in it to override the category icon for that row. Leave it blank to keep the category icon; a name not on this list is ignored.
+
+`account_balance` `apartment` `bed` `bolt` `church` `circle` `construction` `corporate_fare` `directions_bus` `dns` `engineering` `factory` `flight` `front_loader` `handyman` `home` `hotel` `local_hospital` `local_shipping` `location_city` `oil_barrel` `park` `recycling` `restaurant` `school` `science` `shopping_cart` `solar_power` `stadium` `store` `train` `warehouse` `water_drop`
+
+Spaces and capitals are fine: `Shopping Cart` works. Preview any of them at https://fonts.google.com/icons. To add more, put the name in both the font link and the `ICONS` list in `index.html`.
 - The sheet must stay shared as "Anyone with the link can view".
 
 ## One-time setup in the sheet (coordinates)
