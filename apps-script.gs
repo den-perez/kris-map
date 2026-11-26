@@ -29,19 +29,42 @@ function fillCoordinates() {
   const coords = coordsRange.getValues();
   const geocoder = Maps.newGeocoder().setRegion('us');
   const start = Date.now();
-  let filled = 0, notFound = 0, left = 0;
+  let filled = 0, notFound = 0, left = 0, stopped = '';
 
-  for (let i = 0; i < n; i++) {
-    const address = String(addresses[i][0]).trim();
-    if (!address || coords[i][0] !== '') continue; // only blank rows; clear a cell to redo it
-    if (Date.now() - start > TIME_LIMIT_MS) { left++; continue; }
-    const hit = geocoder.geocode(address).results[0];
-    if (hit) { coords[i] = [hit.geometry.location.lat, hit.geometry.location.lng]; filled++; }
-    else { coords[i] = ['not found', '']; notFound++; }
+  try {
+    for (let i = 0; i < n; i++) {
+      const address = String(addresses[i][0]).trim();
+      if (!address || coords[i][0] !== '') continue; // only blank rows; clear a cell to redo it
+      if (stopped || Date.now() - start > TIME_LIMIT_MS) { left++; continue; }
+      try {
+        const hit = geocodeWithRetry(geocoder, address);
+        if (hit) { coords[i] = [hit.geometry.location.lat, hit.geometry.location.lng]; filled++; }
+        else { coords[i] = ['not found', '']; notFound++; }
+      } catch (e) {
+        stopped = e.message; // e.g. daily quota used up: keep what we have, count the rest as left
+        left++;
+      }
+      Utilities.sleep(GEOCODE_PAUSE_MS);
+    }
+  } finally {
+    coordsRange.setValues(coords); // save progress even if something above throws
   }
-  coordsRange.setValues(coords);
   SpreadsheetApp.getActive().toast(
-    `Filled ${filled}. Not found: ${notFound}.` + (left ? ` ${left} left, run it again.` : ''), 'Map', 10);
+    `Filled ${filled}. Not found: ${notFound}.` + (left ? ` ${left} left, run it again${stopped ? ' later' : ''}.` : '') +
+    (stopped ? ` Stopped: ${stopped}` : ''), 'Map', 30);
+}
+
+const GEOCODE_PAUSE_MS = 500;
+
+function geocodeWithRetry(geocoder, address) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return geocoder.geocode(address).results[0];
+    } catch (e) {
+      if (attempt >= 4 || !/short time/i.test(e.message)) throw e;
+      Utilities.sleep(2000 * attempt); // Google asked us to slow down: back off and retry
+    }
+  }
 }
 
 function installHourlyTrigger() {
