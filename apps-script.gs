@@ -29,7 +29,38 @@ function onOpen() {
   SpreadsheetApp.getUi().createMenu('Map')
     .addItem('Fill coordinates', 'fillCoordinates')
     .addItem('Auto-fill every hour', 'installHourlyTrigger')
+    .addItem('Import coordinates', 'importCoordinates')
     .addToUi();
+}
+
+// Copies Lat/Lng from an imported tab whose first columns are Address, Lat, Lng (e.g. a CSV
+// added with File → Import → Insert new sheet) into Master rows with the same Address and no Lat yet.
+function importCoordinates() {
+  const ss = SpreadsheetApp.getActive();
+  const source = ss.getSheets().find(s => s.getName() !== TAB && s.getLastRow() > 1 &&
+    s.getRange(1, 1, 1, 3).getDisplayValues()[0].join('|') === 'Address|Lat|Lng');
+  if (!source) throw new Error('No tab with Address, Lat, Lng headers found. Import the CSV as a new sheet first.');
+
+  const found = new Map();
+  for (const [a, lat, lng] of source.getRange(2, 1, source.getLastRow() - 1, 3).getValues()) {
+    if (typeof lat === 'number' && typeof lng === 'number') found.set(String(a).trim(), [lat, lng]);
+  }
+
+  const sheet = ss.getSheetByName(TAB);
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const addrCol = header.indexOf('Address'), latCol = header.indexOf('Lat');
+  if (addrCol < 0 || latCol < 0 || header[latCol + 1] !== 'Lng') throw new Error('Master needs Address, Lat and Lng columns.');
+  const n = sheet.getLastRow() - 1;
+  const addresses = sheet.getRange(2, addrCol + 1, n, 1).getValues();
+  const coordsRange = sheet.getRange(2, latCol + 1, n, 2);
+  const coords = coordsRange.getValues();
+  let filled = 0;
+  for (let i = 0; i < n; i++) {
+    const hit = coords[i][0] === '' && found.get(String(addresses[i][0]).trim());
+    if (hit) { coords[i] = hit; filled++; }
+  }
+  coordsRange.setValues(coords);
+  ss.toast(`Filled ${filled} rows from "${source.getName()}". You can delete that tab now.`, 'Map', 30);
 }
 
 function fillCoordinates() {
