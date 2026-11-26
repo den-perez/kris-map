@@ -21,6 +21,9 @@
   #tiers { border: 0; padding: 8px 0 4px; display: grid; gap: 2px; }
   #tiers label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
   #tiers .n { margin-left: auto; color: #666; font-variant-numeric: tabular-nums; }
+  #all { justify-self: start; font: inherit; font-size: 13px; color: #0277BD; background: none; border: 0; padding: 2px 0; cursor: pointer; }
+  #all:hover { text-decoration: underline; }
+  #all:focus-visible { outline: 2px solid #0288D1; outline-offset: 2px; border-radius: 4px; }
   #count { color: #666; font-size: 13px; padding: 6px 0; border-bottom: 1px solid #eee; }
   #list { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex: 1; }
   #list button { all: unset; box-sizing: border-box; width: 100%; display: grid; grid-template-columns: 10px 1fr; gap: 2px 8px;
@@ -39,6 +42,12 @@
     #toggle { display: block; position: fixed; z-index: 1002; top: 10px; left: 10px; font: inherit; font-weight: 600;
       padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.2); }
     #panel.open + #toggle { left: auto; right: 8px; top: auto; bottom: 32px; } /* clear of the zoom buttons */
+    /* Bigger tap targets for the tier filters. */
+    #tiers { gap: 0; }
+    #tiers label { min-height: 40px; gap: 10px; font-size: 15px; }
+    #tiers input[type=checkbox] { width: 20px; height: 20px; margin: 0; }
+    #tiers .swatch { width: 12px; height: 12px; }
+    #all { font-size: 15px; padding: 8px 0; }
   }
 
   #status { position: absolute; z-index: 1000; left: 50%; bottom: 24px; transform: translateX(-50%);
@@ -59,7 +68,7 @@
 <aside id="panel" aria-label="Projects">
   <select id="sheet" aria-label="Choose sheet"></select>
   <input id="q" type="search" placeholder="Search name, contractor, address…" aria-label="Search projects" autocomplete="off">
-  <fieldset id="tiers" aria-label="Show tiers"></fieldset>
+  <fieldset id="tiers" aria-label="Show tiers"><button id="all" type="button" hidden>Deselect all</button></fieldset>
   <div id="count" aria-live="polite"></div>
   <ol id="list"></ol>
 </aside>
@@ -210,6 +219,8 @@ function render() {
     if (visible) shown.push(it);
   }
   $('tiers').querySelectorAll('.n').forEach(n => { n.textContent = counts[n.dataset.i]; });
+  const boxes = $('tiers').querySelectorAll('input[type=checkbox]');
+  $('all').textContent = [...boxes].every(b => b.checked) ? 'Deselect all' : 'Select all';
   $('count').textContent = `${shown.length} of ${items.length} projects` + (shown.length > LIST_LIMIT ? ` · first ${LIST_LIMIT} listed` : '');
   $('list').innerHTML = shown.slice(0, LIST_LIMIT).map(it => {
     const meta = [it.r['Project Value'], it.r['Category']].filter(Boolean).map(esc).join(' · ');
@@ -229,6 +240,13 @@ $('list').onclick = e => {
 let timer;
 $('q').oninput = () => { clearTimeout(timer); timer = setTimeout(render, 120); };
 $('tiers').onchange = render;
+// Select all tiers, or deselect all when every tier is already checked.
+$('all').onclick = () => {
+  const boxes = [...$('tiers').querySelectorAll('input[type=checkbox]')];
+  const check = !boxes.every(b => b.checked);
+  boxes.forEach(b => { b.checked = check; });
+  render();
+};
 
 fetch(src)
   .then(res => { if (!res.ok) throw new Error(res.status); return res.json(); })
@@ -254,6 +272,7 @@ fetch(src)
     $('tiers').insertAdjacentHTML('beforeend', LAYERS.map(([label, color], i) =>
       items.some(it => it.layer === i) ? `<label><input type="checkbox" value="${i}" checked>` +
         `<span class="swatch" style="background:${color}"></span>${esc(label)}<span class="n" data-i="${i}"></span></label>` : '').join(''));
+    $('all').hidden = false;
     render();
 
     const bounds = L.featureGroup(groups).getBounds(); // invalid when no row has coordinates yet
