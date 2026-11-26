@@ -1,6 +1,28 @@
-// Paste into the sheet: Extensions → Apps Script. Adds a "Map" menu that fills Lat/Lng
-// columns on the Master tab from the Address column, using Google's geocoder.
+// Paste into the sheet: Extensions → Apps Script. Two jobs:
+// 1. A "Map" menu that fills Lat/Lng columns on the Master tab from the Address column.
+// 2. doGet(): deployed as a web app, it hands the map the Master tab's PUBLIC_COLUMNS as JSON,
+//    so the sheet itself can stay private.
 const TAB = 'Master';
+
+// Only these columns leave the sheet. Remove one here (e.g. 'Notes') to keep it off the map.
+// After changing this file: Deploy → Manage deployments → Edit → Version: New version → Deploy.
+const PUBLIC_COLUMNS = ['Name', 'Project Name', 'Record Type', 'Category', 'Tier / Priority', 'Tier',
+  'Status', 'Zone', 'Address', 'Start Date', 'End Date', 'General Contractor', 'Project Value',
+  'Notes', 'Icon', 'Lat', 'Lng'];
+
+function doGet() {
+  const range = SpreadsheetApp.getActive().getSheetByName(TAB).getDataRange();
+  const shown = range.getDisplayValues(); // text as it appears in the sheet ("Nov 2026", "20B")
+  const raw = range.getValues();          // full-precision numbers for Lat/Lng
+  const cols = shown[0].map((h, i) => [String(h).trim(), i]).filter(([h]) => PUBLIC_COLUMNS.includes(h));
+  const rows = [];
+  for (let r = 1; r < shown.length; r++) {
+    const row = {};
+    for (const [h, i] of cols) row[h] = (h === 'Lat' || h === 'Lng') ? raw[r][i] : shown[r][i];
+    if (Object.values(row).some(v => v !== '')) rows.push(row);
+  }
+  return ContentService.createTextOutput(JSON.stringify(rows)).setMimeType(ContentService.MimeType.JSON);
+}
 const TIME_LIMIT_MS = 5 * 60 * 1000; // Apps Script stops at 6 min; leave room to save.
 
 function onOpen() {
