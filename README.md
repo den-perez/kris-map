@@ -4,9 +4,18 @@ A live map of construction projects. Each time the page opens it asks the sheet'
 
 **Map:** https://den-perez.github.io/kris-map/
 
+## Using the map
+
+The panel on the left (the **List** button on phones) has:
+
+- **Sheet dropdown** to switch between sheets.
+- **Search box.** It matches name, address, category, contractor, status, zone, value and notes. Several words must all match: `hospital round rock`. For a state, search its abbreviation (`TX`), since addresses don't spell it out.
+- **Tier checkboxes** to show or hide each layer, with how many projects match the search in each.
+- **Project list**, sorted by tier and then largest value first. Click a project to zoom to it and open its details. Only the first 200 are listed; search to narrow it down. The map always shows every match.
+
 ## Sheets
 
-A dropdown at the top left switches between sheets. Each has its own link:
+Each sheet has its own link:
 
 - Austin Metro: https://den-perez.github.io/kris-map/?sheet=austin (default)
 - US: https://den-perez.github.io/kris-map/?sheet=us

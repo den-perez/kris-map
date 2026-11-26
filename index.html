@@ -8,13 +8,43 @@
 <!-- Only the icons in ICONS below are downloaded. Keep this list in sync with ICONS (alphabetical). -->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,500,1,0&icon_names=account_balance,apartment,bed,bolt,church,circle,construction,corporate_fare,directions_bus,dns,engineering,factory,flight,front_loader,handyman,home,hotel,local_hospital,local_shipping,location_city,oil_barrel,park,recycling,restaurant,school,science,shopping_cart,solar_power,stadium,store,train,warehouse,water_drop&display=block">
 <style>
-  html, body, #map { height: 100%; margin: 0; }
-  body { font: 14px/1.4 system-ui, -apple-system, sans-serif; }
+  html, body { height: 100%; margin: 0; }
+  body { font: 14px/1.4 system-ui, -apple-system, sans-serif; display: flex; color: #222; }
+  #map { flex: 1; height: 100%; }
+
+  #panel { width: 340px; flex: none; height: 100%; display: flex; flex-direction: column; background: #fff;
+    border-right: 1px solid #ddd; box-sizing: border-box; z-index: 1001; }
+  #panel > * { margin: 0 12px; }
+  #sheet { margin-top: 12px; font: inherit; font-weight: 600; padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; background: #fff; }
+  #q { margin-top: 8px; font: inherit; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; }
+  #q:focus, #sheet:focus { outline: 2px solid #0288D1; outline-offset: 0; }
+  #tiers { border: 0; padding: 8px 0 4px; display: grid; gap: 2px; }
+  #tiers label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  #tiers .n { margin-left: auto; color: #666; font-variant-numeric: tabular-nums; }
+  #count { color: #666; font-size: 13px; padding: 6px 0; border-bottom: 1px solid #eee; }
+  #list { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex: 1; }
+  #list button { all: unset; box-sizing: border-box; width: 100%; display: grid; grid-template-columns: 10px 1fr; gap: 2px 8px;
+    padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #f2f2f2; }
+  #list button:hover, #list button:focus-visible { background: #f4f8fb; }
+  #list .swatch { margin-top: 5px; }
+  #list .name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-weight: 500; }
+  #list .meta { grid-column: 2; color: #666; font-size: 12px; }
+  #list .more { padding: 10px 12px; color: #666; font-size: 13px; }
+  #toggle { display: none; }
+
+  @media (max-width: 700px) {
+    #panel { position: fixed; inset: 0 auto 0 0; width: min(calc(100vw - 72px), 340px); transform: translateX(-100%);
+      transition: transform .2s; box-shadow: 2px 0 8px rgba(0,0,0,.2); }
+    #panel.open { transform: none; }
+    #toggle { display: block; position: fixed; z-index: 1002; top: 10px; left: 10px; font: inherit; font-weight: 600;
+      padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.2); }
+    #panel.open + #toggle { left: auto; right: 8px; top: auto; bottom: 32px; } /* clear of the zoom buttons */
+  }
+
   #status { position: absolute; z-index: 1000; left: 50%; bottom: 24px; transform: translateX(-50%);
     background: #fff; padding: 6px 12px; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.3); }
   #status:empty { display: none; }
-  .switcher { font: inherit; font-weight: 600; padding: 6px 8px; border: 2px solid rgba(0,0,0,.2); border-radius: 4px; background: #fff; }
-  .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; border: 1px solid #0003; }
+  .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 1px solid #0003; flex: none; }
   .pin { width: 28px; height: 28px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
     display: grid; place-items: center; border: 1.5px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.45); box-sizing: border-box; }
   .pin .material-symbols-outlined { transform: rotate(45deg); font-size: 17px; }
@@ -26,6 +56,14 @@
 </style>
 </head>
 <body>
+<aside id="panel" aria-label="Projects">
+  <select id="sheet" aria-label="Choose sheet"></select>
+  <input id="q" type="search" placeholder="Search name, contractor, address…" aria-label="Search projects" autocomplete="off">
+  <fieldset id="tiers" aria-label="Show tiers"></fieldset>
+  <div id="count" aria-live="polite"></div>
+  <ol id="list"></ol>
+</aside>
+<button id="toggle" type="button" aria-controls="panel" aria-expanded="false">List</button>
 <div id="map"></div>
 <div id="status" role="status">Loading sheet…</div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin=""></script>
@@ -77,6 +115,9 @@ const ICONS = new Set(['account_balance', 'apartment', 'bed', 'bolt', 'church', 
 
 const FIELDS = ['Record Type', 'Category', 'Tier / Priority', 'Status', 'Zone', 'Address',
   'Start Date', 'End Date', 'General Contractor', 'Project Value', 'Notes'];
+// Columns the search box looks in.
+const SEARCH_FIELDS = ['Name', 'Address', 'Category', 'General Contractor', 'Status', 'Zone', 'Project Value', 'Notes'];
+const LIST_LIMIT = 200; // longer lists slow the panel down; the count says how many more match
 
 function layerFor(r) {
   if (/complet|cancel/i.test(r['Status'] || '')) return 6;
@@ -90,6 +131,13 @@ function layerFor(r) {
 function iconFor(r) {
   const own = (r['Icon'] || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
   return ICONS.has(own) ? own : CATEGORY_ICONS[(r['Category'] || '').trim()] || 'circle';
+}
+
+// "20B" → 2e10, "968.1M" → 9.681e8, "$1,200,000" → 1.2e6; anything else → 0. Used to sort the list.
+function dollars(s) {
+  const m = /([\d.,]+)\s*([KMB])?/i.exec(String(s || ''));
+  if (!m) return 0;
+  return (parseFloat(m[1].replace(/,/g, '')) || 0) * ({ K: 1e3, M: 1e6, B: 1e9 }[(m[2] || '').toUpperCase()] || 1);
 }
 
 const pinCache = {};
@@ -108,33 +156,32 @@ function pin(layer, icon) {
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 function popup(r) {
-  const rows = FIELDS.filter(f => (r[f] || '').trim())
+  const rows = FIELDS.filter(f => String(r[f] || '').trim())
     .map(f => `<dt>${esc(f)}</dt><dd>${esc(r[f])}</dd>`).join('');
   return `<h3>${esc(r['Name'] || 'Untitled')}</h3><dl>${rows}</dl>`;
 }
 
-const map = L.map('map').setView([30.45, -97.52], 10);
+const map = L.map('map', { zoomControl: false }).setView([30.45, -97.52], 10);
+L.control.zoom({ position: 'topright' }).addTo(map);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors', maxZoom: 19,
 }).addTo(map);
 
-const status = document.getElementById('status');
+const $ = id => document.getElementById(id);
+const status = $('status'), panel = $('panel'), toggle = $('toggle');
 const params = new URLSearchParams(location.search);
 const sheet = SHEETS.find(s => s[0] === params.get('sheet')) || SHEETS[0];
 const src = params.get('src') || sheet[2]; // ?src= lets you test with a local JSON file
 document.title = `${sheet[1]} Projects Map`;
 
 // Sheet switcher: reloads the page with ?sheet=<key>, so each view has its own shareable link.
-const switcher = L.control({ position: 'topleft' });
-switcher.onAdd = () => {
-  const select = L.DomUtil.create('select', 'switcher');
-  select.setAttribute('aria-label', 'Choose sheet');
-  select.innerHTML = SHEETS.map(s => `<option value="${s[0]}"${s === sheet ? ' selected' : ''}>${esc(s[1])}</option>`).join('');
-  select.onchange = () => { params.set('sheet', select.value); location.search = params; };
-  L.DomEvent.disableClickPropagation(select);
-  return select;
-};
-switcher.addTo(map);
+$('sheet').innerHTML = SHEETS.map(s => `<option value="${s[0]}"${s === sheet ? ' selected' : ''}>${esc(s[1])}</option>`).join('');
+$('sheet').onchange = e => { params.set('sheet', e.target.value); location.search = params; };
+
+// Small screens: the panel slides over the map.
+const narrow = matchMedia('(max-width: 700px)');
+function setPanel(open) { panel.classList.toggle('open', open); toggle.setAttribute('aria-expanded', open); toggle.textContent = open ? 'Map' : 'List'; }
+toggle.onclick = () => setPanel(!panel.classList.contains('open'));
 
 // Accept either sheet's column names; Address may itself be "lat, lng".
 const COORDS = /^\s*(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*$/;
@@ -146,6 +193,43 @@ function normalize(r) {
   return r;
 }
 
+const groups = LAYERS.map(() => L.featureGroup().addTo(map));
+let items = []; // { r, marker, layer, text, value }
+
+// Show only pins and list rows that are in a checked tier and contain every search word.
+function render() {
+  const words = $('q').value.toLowerCase().split(/\s+/).filter(Boolean);
+  const on = LAYERS.map((_, i) => !!$('tiers').querySelector(`input[value="${i}"]:checked`));
+  const counts = LAYERS.map(() => 0);
+  const shown = [];
+  for (const it of items) {
+    const match = words.every(w => it.text.includes(w));
+    if (match) counts[it.layer]++;
+    const visible = match && on[it.layer];
+    if (visible !== groups[it.layer].hasLayer(it.marker)) groups[it.layer][visible ? 'addLayer' : 'removeLayer'](it.marker);
+    if (visible) shown.push(it);
+  }
+  $('tiers').querySelectorAll('.n').forEach(n => { n.textContent = counts[n.dataset.i]; });
+  $('count').textContent = `${shown.length} of ${items.length} projects` + (shown.length > LIST_LIMIT ? ` · first ${LIST_LIMIT} listed` : '');
+  $('list').innerHTML = shown.slice(0, LIST_LIMIT).map(it => {
+    const meta = [it.r['Project Value'], it.r['Category']].filter(Boolean).map(esc).join(' · ');
+    return `<li><button type="button" data-i="${it.i}"><span class="swatch" style="background:${LAYERS[it.layer][1]}"></span>` +
+      `<span class="name">${esc(it.r['Name'] || 'Untitled')}</span>${meta ? `<span class="meta">${meta}</span>` : ''}</button></li>`;
+  }).join('') + (shown.length > LIST_LIMIT ? `<li class="more">${shown.length - LIST_LIMIT} more on the map. Search to narrow the list.</li>` : '');
+}
+
+$('list').onclick = e => {
+  const btn = e.target.closest('button[data-i]');
+  if (!btn) return;
+  const { marker } = items[btn.dataset.i];
+  if (narrow.matches) setPanel(false);
+  map.setView(marker.getLatLng(), Math.max(map.getZoom(), 14));
+  marker.openPopup();
+};
+let timer;
+$('q').oninput = () => { clearTimeout(timer); timer = setTimeout(render, 120); };
+$('tiers').onchange = render;
+
 fetch(src)
   .then(res => { if (!res.ok) throw new Error(res.status); return res.json(); })
   .then(data => {
@@ -153,22 +237,25 @@ fetch(src)
       status.textContent = 'The sheet returned no projects. Check its Master tab has an Address column.';
       return;
     }
-    const groups = LAYERS.map(() => L.featureGroup());
     let missing = 0;
     for (const r of data.map(normalize)) {
       const lat = parseFloat(r.Lat), lng = parseFloat(r.Lng);
       if (!isFinite(lat) || !isFinite(lng)) { missing++; continue; }
-      const i = layerFor(r);
-      L.marker([lat, lng], { icon: pin(i, iconFor(r)), title: r['Name'] || '' })
-        .bindPopup(popup(r)).addTo(groups[i]);
+      const layer = layerFor(r);
+      const marker = L.marker([lat, lng], { icon: pin(layer, iconFor(r)), title: r['Name'] || '' }).bindPopup(popup(r));
+      const text = SEARCH_FIELDS.map(f => r[f] || '').join(' ').toLowerCase();
+      items.push({ r, marker, layer, text, value: dollars(r['Project Value']) });
     }
-    const overlays = {};
-    groups.forEach((g, i) => {
-      if (!g.getLayers().length) return; // e.g. the US sheet has no facility or contractor rows
-      g.addTo(map);
-      overlays[`<span class="swatch" style="background:${LAYERS[i][1]}"></span>${LAYERS[i][0]} (${g.getLayers().length})`] = g;
-    });
-    L.control.layers(null, overlays, { collapsed: window.innerWidth < 700 }).addTo(map);
+    // List order: tier, then biggest project value first.
+    items.sort((a, b) => a.layer - b.layer || b.value - a.value || a.r['Name'].localeCompare(b.r['Name']));
+    items.forEach((it, i) => { it.i = i; });
+
+    // One checkbox per tier that has rows (e.g. the US sheet has no facilities or contractors).
+    $('tiers').insertAdjacentHTML('beforeend', LAYERS.map(([label, color], i) =>
+      items.some(it => it.layer === i) ? `<label><input type="checkbox" value="${i}" checked>` +
+        `<span class="swatch" style="background:${color}"></span>${esc(label)}<span class="n" data-i="${i}"></span></label>` : '').join(''));
+    render();
+
     const bounds = L.featureGroup(groups).getBounds(); // invalid when no row has coordinates yet
     if (bounds.isValid()) map.fitBounds(bounds, { padding: [20, 20] });
     status.textContent = missing ? `${missing} of ${data.length} rows have no Lat/Lng yet. Run Map → Fill coordinates in the sheet.` : '';
