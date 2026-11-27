@@ -67,7 +67,7 @@
 <body>
 <aside id="panel" aria-label="Projects">
   <select id="sheet" aria-label="Choose sheet"></select>
-  <input id="q" type="search" placeholder="Search name, contractor, address…" aria-label="Search projects" autocomplete="off">
+  <input id="q" type="search" placeholder="Search name, contractor, address…" aria-label="Search projects" autocomplete="off" list="suggest"><datalist id="suggest"></datalist>
   <fieldset id="tiers" aria-label="Show tiers"><button id="all" type="button" hidden>Deselect all</button></fieldset>
   <div id="count" aria-live="polite"></div>
   <ol id="list"></ol>
@@ -126,6 +126,7 @@ const FIELDS = ['Record Type', 'Category', 'Tier / Priority', 'Status', 'Zone', 
   'Start Date', 'End Date', 'General Contractor', 'Project Value', 'Notes'];
 // Columns the search box looks in.
 const SEARCH_FIELDS = ['Name', 'Address', 'Category', 'General Contractor', 'Status', 'Zone', 'Project Value', 'Notes'];
+const SUGGEST_FIELDS = ['Name', 'General Contractor', 'Category', 'Zone', 'Status']; // offered as you type
 const LIST_LIMIT = 200; // longer lists slow the panel down; the count says how many more match
 
 function layerFor(r) {
@@ -246,7 +247,7 @@ $('list').onclick = e => {
   marker.openPopup();
 };
 let timer;
-$('q').oninput = () => { clearTimeout(timer); timer = setTimeout(render, 120); };
+$('q').oninput = () => { clearTimeout(timer); timer = setTimeout(() => fit(render()), 120); };
 $('tiers').onchange = () => fit(render());
 // Select all tiers, or deselect all when every tier is already checked.
 $('all').onclick = () => {
@@ -291,6 +292,8 @@ getData(`Password for the ${sheet[1]} map:`)
     // List order: tier, then biggest project value first.
     items.sort((a, b) => a.layer - b.layer || b.value - a.value || a.r['Name'].localeCompare(b.r['Name']));
     items.forEach((it, i) => { it.i = i; });
+    const suggestions = new Set(items.flatMap(it => SUGGEST_FIELDS.map(f => String(it.r[f] || '').trim())).filter(Boolean));
+    $('suggest').innerHTML = [...suggestions].sort().map(s => `<option value="${esc(s)}">`).join('');
 
     // One checkbox per tier that has rows (e.g. the US sheet has no facilities or contractors).
     // All start unchecked: the map is empty until a tier is picked.

@@ -9,8 +9,8 @@ A live map of construction projects. Each time the page opens it asks the sheet'
 The panel on the left (the **List** button on phones) has:
 
 - **Sheet dropdown** to switch between sheets.
-- **Search box.** It matches name, address, category, contractor, status, zone, value and notes. Several words must all match: `hospital round rock`. For a state, search its abbreviation (`TX`), since addresses don't spell it out.
-- **Tier checkboxes** to show or hide each layer, with how many projects match the search in each. All start unchecked, so the map is empty until you pick a tier. Each time you check or uncheck one, the map zooms to fit the pins shown.
+- **Search box.** It matches name, address, category, contractor, status, zone, value and notes. Several words must all match: `hospital round rock`. For a state, search its abbreviation (`TX`), since addresses don't spell it out. As you type it suggests matching project names, contractors, categories, zones and statuses; pick one to search for it.
+- **Tier checkboxes** to show or hide each layer, with how many projects match the search in each. All start unchecked, so the map is empty until you pick a tier. Each time you check or uncheck one, or change the search, the map zooms to fit the pins shown.
 - **Project list**, sorted by tier and then largest value first. Click a project to zoom to it and open its details. Only the first 200 are listed; search to narrow it down. The map always shows every match.
 
 ## Sheets
