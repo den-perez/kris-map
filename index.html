@@ -221,12 +221,20 @@ function render() {
   $('tiers').querySelectorAll('.n').forEach(n => { n.textContent = counts[n.dataset.i]; });
   const boxes = $('tiers').querySelectorAll('input[type=checkbox]');
   $('all').textContent = [...boxes].every(b => b.checked) ? 'Deselect all' : 'Select all';
-  $('count').textContent = `${shown.length} of ${items.length} projects` + (shown.length > LIST_LIMIT ? ` · first ${LIST_LIMIT} listed` : '');
+  $('count').textContent = !on.some(Boolean) ? 'Select a tier to show projects.'
+    : `${shown.length} of ${items.length} projects` + (shown.length > LIST_LIMIT ? ` · first ${LIST_LIMIT} listed` : '');
   $('list').innerHTML = shown.slice(0, LIST_LIMIT).map(it => {
     const meta = [it.r['Project Value'], it.r['Category']].filter(Boolean).map(esc).join(' · ');
     return `<li><button type="button" data-i="${it.i}"><span class="swatch" style="background:${LAYERS[it.layer][1]}"></span>` +
       `<span class="name">${esc(it.r['Name'] || 'Untitled')}</span>${meta ? `<span class="meta">${meta}</span>` : ''}</button></li>`;
   }).join('') + (shown.length > LIST_LIMIT ? `<li class="more">${shown.length - LIST_LIMIT} more on the map. Search to narrow the list.</li>` : '');
+  return shown;
+}
+
+// Zoom to fit the given pins; maxZoom keeps a single pin from zooming in to street level.
+function fit(list) {
+  const bounds = L.featureGroup(list.map(it => it.marker)).getBounds();
+  if (bounds.isValid()) map.fitBounds(bounds, { padding: [20, 20], maxZoom: 14 });
 }
 
 $('list').onclick = e => {
@@ -239,13 +247,13 @@ $('list').onclick = e => {
 };
 let timer;
 $('q').oninput = () => { clearTimeout(timer); timer = setTimeout(render, 120); };
-$('tiers').onchange = render;
+$('tiers').onchange = () => fit(render());
 // Select all tiers, or deselect all when every tier is already checked.
 $('all').onclick = () => {
   const boxes = [...$('tiers').querySelectorAll('input[type=checkbox]')];
   const check = !boxes.every(b => b.checked);
   boxes.forEach(b => { b.checked = check; });
-  render();
+  fit(render());
 };
 
 // The web app wants the sheet's map password; it's asked once and remembered on this device.
@@ -285,14 +293,13 @@ getData(`Password for the ${sheet[1]} map:`)
     items.forEach((it, i) => { it.i = i; });
 
     // One checkbox per tier that has rows (e.g. the US sheet has no facilities or contractors).
+    // All start unchecked: the map is empty until a tier is picked.
     $('tiers').insertAdjacentHTML('beforeend', LAYERS.map(([label, color], i) =>
-      items.some(it => it.layer === i) ? `<label><input type="checkbox" value="${i}" checked>` +
+      items.some(it => it.layer === i) ? `<label><input type="checkbox" value="${i}">` +
         `<span class="swatch" style="background:${color}"></span>${esc(label)}<span class="n" data-i="${i}"></span></label>` : '').join(''));
     $('all').hidden = false;
     render();
-
-    const bounds = L.featureGroup(groups).getBounds(); // invalid when no row has coordinates yet
-    if (bounds.isValid()) map.fitBounds(bounds, { padding: [20, 20] });
+    fit(items); // frame the sheet's area even though no pins show yet
     status.textContent = missing ? `${missing} of ${data.length} rows have no Lat/Lng yet. Run Map → Fill coordinates in the sheet.` : '';
   })
   // A web app error comes back as an HTML page, so res.json() lands here too.
