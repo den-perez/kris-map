@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Projects Map</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" integrity="sha384-pmjIAcz2bAn0xukfxADbZIb3t8oRT9Sv0rvO+BR5Csr6Dhqq+nZs59P0pPKQJkEV" crossorigin="">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" integrity="sha384-wgw+aLYNQ7dlhK47ZPK7FRACiq7ROZwgFNg0m04avm4CaXS+Z9Y7nMu8yNjBKYC+" crossorigin="">
 <!-- Only the icons in ICONS below are downloaded. Keep this list in sync with ICONS (alphabetical). -->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,500,1,0&icon_names=account_balance,apartment,bed,bolt,church,circle,construction,corporate_fare,directions_bus,dns,engineering,factory,flight,front_loader,handyman,home,hotel,local_hospital,local_shipping,location_city,oil_barrel,park,recycling,restaurant,school,science,shopping_cart,solar_power,stadium,store,train,warehouse,water_drop&display=block">
 <style>
@@ -62,6 +64,11 @@
   .leaflet-popup-content dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; }
   .leaflet-popup-content dt { color: #666; }
   .leaflet-popup-content dd { margin: 0; }
+  .leaflet-popup-content .directions { display: inline-block; margin-top: 8px; font-weight: 600; }
+  #list button.selected { background: #e3f0fa; box-shadow: inset 3px 0 #0288D1; }
+  .pin.picked { animation: pick .5s ease-in-out 3; }
+  @keyframes pick { 50% { transform: rotate(-45deg) scale(1.35); } }
+  @media (prefers-reduced-motion: reduce) { .pin.picked { animation: none; outline: 3px solid #0288D1; } }
 </style>
 </head>
 <body>
@@ -76,6 +83,7 @@
 <div id="map"></div>
 <div id="status" role="status">Loading sheet…</div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin=""></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" integrity="sha384-eXVCORTRlv4FUUgS/xmOyr66XBVraen8ATNLMESp92FKXLAMiKkerixTiBvXriZr" crossorigin=""></script>
 <script>
 // Sheets in the switcher: [key used in ?sheet=, label, web app URL from that sheet's Apps Script deployment].
 // The first one is the default. The web app returns only the map's columns, so the sheet itself stays private.
@@ -168,7 +176,15 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;'
 function popup(r) {
   const rows = FIELDS.filter(f => String(r[f] || '').trim())
     .map(f => `<dt>${esc(f)}</dt><dd>${esc(r[f])}</dd>`).join('');
-  return `<h3>${esc(r['Name'] || 'Untitled')}</h3><dl>${rows}</dl>`;
+  const dest = encodeURIComponent(`${r.Lat},${r.Lng}`);
+  return `<h3>${esc(r['Name'] || 'Untitled')}</h3><dl>${linkPhones(rows)}</dl>` +
+    `<a class="directions" href="https://www.google.com/maps/dir/?api=1&destination=${dest}" target="_blank" rel="noopener">Directions ↗</a>`;
+}
+
+// Turns US phone numbers (512-555-0100, (512) 555 0100, +1 512.555.0100) in escaped HTML into tap-to-call links.
+const PHONE = /(?:\+?1[\s.-]?)?\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]\d{4}\b/g;
+function linkPhones(html) {
+  return html.replace(PHONE, m => `<a href="tel:+1${m.replace(/\D/g, '').slice(-10)}">${m}</a>`);
 }
 
 const map = L.map('map', { zoomControl: false }).setView([30.45, -97.52], 10);
@@ -203,7 +219,9 @@ function normalize(r) {
   return r;
 }
 
-const groups = LAYERS.map(() => L.featureGroup().addTo(map));
+// Nearby pins merge into numbered bubbles that split apart as you zoom in; pins at one spot fan out on click.
+const cluster = L.markerClusterGroup({ maxClusterRadius: 50, chunkedLoading: true }).addTo(map);
+const tiersKey = `tiers_${sheet[0]}`; // ticked tiers, remembered per sheet on this device
 let items = []; // { r, marker, layer, text, value }
 
 // Show only pins and list rows that are in a checked tier and contain every search word.
@@ -211,14 +229,17 @@ function render() {
   const words = $('q').value.toLowerCase().split(/\s+/).filter(Boolean);
   const on = LAYERS.map((_, i) => !!$('tiers').querySelector(`input[value="${i}"]:checked`));
   const counts = LAYERS.map(() => 0);
-  const shown = [];
+  const shown = [], add = [], remove = [];
   for (const it of items) {
     const match = words.every(w => it.text.includes(w));
     if (match) counts[it.layer]++;
     const visible = match && on[it.layer];
-    if (visible !== groups[it.layer].hasLayer(it.marker)) groups[it.layer][visible ? 'addLayer' : 'removeLayer'](it.marker);
+    if (visible !== cluster.hasLayer(it.marker)) (visible ? add : remove).push(it.marker);
     if (visible) shown.push(it);
   }
+  cluster.removeLayers(remove); // in batches: one at a time is slow with thousands of pins
+  cluster.addLayers(add);
+  localStorage.setItem(tiersKey, JSON.stringify(on.flatMap((x, i) => x ? [i] : [])));
   $('tiers').querySelectorAll('.n').forEach(n => { n.textContent = counts[n.dataset.i]; });
   const boxes = $('tiers').querySelectorAll('input[type=checkbox]');
   $('all').textContent = [...boxes].every(b => b.checked) ? 'Deselect all' : 'Select all';
@@ -234,7 +255,7 @@ function render() {
 
 // Zoom to fit the given pins; maxZoom keeps a single pin from zooming in to street level.
 function fit(list) {
-  const bounds = L.featureGroup(list.map(it => it.marker)).getBounds();
+  const bounds = L.latLngBounds(list.map(it => it.marker.getLatLng()));
   if (bounds.isValid()) map.fitBounds(bounds, { padding: [20, 20], maxZoom: 14 });
 }
 
@@ -242,9 +263,15 @@ $('list').onclick = e => {
   const btn = e.target.closest('button[data-i]');
   if (!btn) return;
   const { marker } = items[btn.dataset.i];
+  $('list').querySelector('.selected')?.classList.remove('selected');
+  btn.classList.add('selected');
   if (narrow.matches) setPanel(false);
-  map.setView(marker.getLatLng(), Math.max(map.getZoom(), 14));
-  marker.openPopup();
+  // The pin may be off screen or inside a bubble: pan/zoom until it's on its own, then open it and make it bounce.
+  cluster.zoomToShowLayer(marker, () => {
+    marker.openPopup();
+    const el = marker.getElement()?.querySelector('.pin');
+    if (el) { el.classList.remove('picked'); void el.offsetWidth; el.classList.add('picked'); }
+  });
 };
 let timer;
 $('q').oninput = () => { clearTimeout(timer); timer = setTimeout(() => fit(render()), 120); };
@@ -296,13 +323,17 @@ getData(`Password for the ${sheet[1]} map:`)
     $('suggest').innerHTML = [...suggestions].sort().map(s => `<option value="${esc(s)}">`).join('');
 
     // One checkbox per tier that has rows (e.g. the US sheet has no facilities or contractors).
-    // All start unchecked: the map is empty until a tier is picked.
+    // First visit: all unchecked, so the map is empty until a tier is picked. After that, the last ticked tiers.
+    let saved = [];
+    try { saved = JSON.parse(localStorage.getItem(tiersKey)) || []; } catch (e) { /* bad value: start empty */ }
     $('tiers').insertAdjacentHTML('beforeend', LAYERS.map(([label, color], i) =>
-      items.some(it => it.layer === i) ? `<label><input type="checkbox" value="${i}">` +
+      items.some(it => it.layer === i) ? `<label><input type="checkbox" value="${i}"${saved.includes(i) ? ' checked' : ''}>` +
         `<span class="swatch" style="background:${color}"></span>${esc(label)}<span class="n" data-i="${i}"></span></label>` : '').join(''));
     $('all').hidden = false;
-    render();
-    fit(items); // frame the sheet's area even though no pins show yet
+    const shown = render();
+    fit(shown.length ? shown : items); // nothing ticked: still frame the sheet's area
+    // On a phone an empty map gives no clue what to do, so open the panel with the tier boxes.
+    if (!shown.length && narrow.matches) setPanel(true);
     status.textContent = missing ? `${missing} of ${data.length} rows have no Lat/Lng yet. Run Map → Fill coordinates in the sheet.` : '';
   })
   // A web app error comes back as an HTML page, so res.json() lands here too.

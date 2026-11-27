@@ -10,8 +10,10 @@ The panel on the left (the **List** button on phones) has:
 
 - **Sheet dropdown** to switch between sheets.
 - **Search box.** It matches name, address, category, contractor, status, zone, value and notes. Several words must all match: `hospital round rock`. For a state, search its abbreviation (`TX`), since addresses don't spell it out. As you type it suggests matching project names, contractors, categories, zones and statuses; pick one to search for it.
-- **Tier checkboxes** to show or hide each layer, with how many projects match the search in each. All start unchecked, so the map is empty until you pick a tier. Each time you check or uncheck one, or change the search, the map zooms to fit the pins shown.
-- **Project list**, sorted by tier and then largest value first. Click a project to zoom to it and open its details. Only the first 200 are listed; search to narrow it down. The map always shows every match.
+- **Tier checkboxes** to show or hide each layer, with how many projects match the search in each. The first time, all start unchecked, so the map is empty until you pick a tier (on phones the panel opens by itself so the boxes are in view). After that each device remembers the tiers you last had ticked, per sheet. Each time you check or uncheck one, or change the search, the map zooms to fit the pins shown.
+- **Project list**, sorted by tier and then largest value first. Click a project to highlight it, zoom to it, open its details and make its pin bounce. Only the first 200 are listed; search to narrow it down. The map always shows every match.
+
+On the map, nearby pins merge into numbered bubbles (the number is how many projects are inside). Click a bubble or zoom in to split it. Pins at the same spot fan out when clicked. Each pin's details have a **Directions** link that opens Google Maps, and phone numbers in the details can be tapped to call.
 
 ## Sheets
 
