@@ -248,8 +248,24 @@ $('all').onclick = () => {
   render();
 };
 
-fetch(src)
-  .then(res => { if (!res.ok) throw new Error(res.status); return res.json(); })
+// The web app wants the sheet's map password; it's asked once and remembered on this device.
+// shortcut: prompt() shows the password as typed, swap for a password form if that matters.
+const keyName = `mapKey_${sheet[0]}`;
+function getData(question) {
+  const key = localStorage.getItem(keyName) || prompt(question);
+  if (!key) return Promise.reject(new Error('no password'));
+  const url = new URL(src, location.href);
+  url.searchParams.set('key', key);
+  return fetch(url)
+    .then(res => { if (!res.ok) throw new Error(res.status); return res.json(); })
+    .then(data => {
+      if (data && data.error) { localStorage.removeItem(keyName); return getData(`Wrong password. Password for the ${sheet[1]} map:`); }
+      localStorage.setItem(keyName, key);
+      return data;
+    });
+}
+
+getData(`Password for the ${sheet[1]} map:`)
   .then(data => {
     if (!Array.isArray(data) || !data.length || !('Address' in data[0])) {
       status.textContent = 'The sheet returned no projects. Check its Master tab has an Address column.';
@@ -280,7 +296,10 @@ fetch(src)
     status.textContent = missing ? `${missing} of ${data.length} rows have no Lat/Lng yet. Run Map → Fill coordinates in the sheet.` : '';
   })
   // A web app error comes back as an HTML page, so res.json() lands here too.
-  .catch(() => { status.textContent = 'Could not load the sheet. Is its web app deployed with access "Anyone"?'; });
+  .catch(err => {
+    status.textContent = err.message === 'no password' ? 'This map needs a password. Reload the page to enter it.'
+      : 'Could not load the sheet. Is its web app deployed with access "Anyone"?';
+  });
 </script>
 </body>
 </html>

@@ -29,6 +29,7 @@ The sheet needs an `Address` column. A name column can be `Name` or `Project Nam
 3. Put that URL in the `SHEETS` list near the top of the script in `index.html` (add a new line for a new sheet).
 4. Reload the sheet. A **Map** menu appears. Run **Map → Fill coordinates**; if it says rows are left, run it again. Optional: **Map → Auto-fill every hour** so new rows get coordinates on their own.
 5. Turn off link sharing on the sheet (**Share → General access → Restricted**). The map keeps working through the web app.
+6. Run **Map → Set map password**. The map asks for it the first time someone opens it on a device and remembers it after that. Until a password is set the web app returns no data. To lock everyone out, set a new password and share it only with the people who should still have access.
 
 Rows whose address can't be found get `not found` in `Lat`. Fix the address, clear that cell, and run Fill coordinates again.
 
@@ -40,7 +41,7 @@ Rows whose address can't be found get `not found` in `Lat`. Fix the address, cle
 
 Only the columns in `PUBLIC_COLUMNS` at the top of `apps-script.gs` leave the sheet: names, address, category, tier, status, zone, dates, contractor, value, notes, icon and coordinates. Other columns and other tabs stay private. To hide a column (for example `Notes`), remove it from that list and redeploy as above.
 
-The web app URL is public, since the map has to reach it, so anyone who finds it can get the same data the map shows.
+The map page and web app URL are public, but the web app hands out data only with the map password (each sheet has its own). Anyone you give the password can see everything the map shows, and can pass it on, so change it if it spreads too far. The password is remembered in the browser; clear the site's data to forget it.
 
 ## Pins
 

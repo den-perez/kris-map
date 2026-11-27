@@ -1,7 +1,7 @@
 // Paste into the sheet: Extensions → Apps Script. Two jobs:
 // 1. A "Map" menu that fills Lat/Lng columns on the Master tab from the Address column.
 // 2. doGet(): deployed as a web app, it hands the map the Master tab's PUBLIC_COLUMNS as JSON,
-//    so the sheet itself can stay private.
+//    so the sheet itself can stay private. It answers only requests carrying the map password.
 const TAB = 'Master';
 
 // Only these columns leave the sheet. Remove one here (e.g. 'Notes') to keep it off the map.
@@ -10,8 +10,21 @@ const PUBLIC_COLUMNS = ['Name', 'Project Name', 'Record Type', 'Category', 'Tier
   'Status', 'Zone', 'Address', 'Start Date', 'End Date', 'General Contractor', 'Project Value',
   'Notes', 'Icon', 'Lat', 'Lng'];
 
-function doGet() {
-  return ContentService.createTextOutput(cachedRowsJson()).setMimeType(ContentService.MimeType.JSON);
+// The map must send ?key=<password>, set with Map → Set map password. No password set = no data.
+function doGet(e) {
+  const want = PropertiesService.getScriptProperties().getProperty('MAP_KEY');
+  const ok = want && e && e.parameter.key === want;
+  return ContentService.createTextOutput(ok ? cachedRowsJson() : '{"error":"wrong password"}')
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function setMapPassword() {
+  const ui = SpreadsheetApp.getUi();
+  const r = ui.prompt('Map password', 'Anyone opening the map will need this. Changing it signs everyone out.', ui.ButtonSet.OK_CANCEL);
+  const pw = r.getResponseText().trim();
+  if (r.getSelectedButton() !== ui.Button.OK || !pw) return;
+  PropertiesService.getScriptProperties().setProperty('MAP_KEY', pw);
+  ui.alert('Map password saved.');
 }
 
 // The map's data is kept in Apps Script's cache so most page loads skip reading the sheet.
@@ -68,6 +81,7 @@ function onOpen() {
     .addItem('Fill coordinates', 'fillCoordinates')
     .addItem('Auto-fill every hour', 'installHourlyTrigger')
     .addItem('Import coordinates', 'importCoordinates')
+    .addItem('Set map password', 'setMapPassword')
     .addToUi();
 }
 
