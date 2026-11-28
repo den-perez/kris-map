@@ -8,6 +8,8 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://script.google.com" crossorigin>
+<link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
 <meta name="theme-color" content="#0288D1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -134,9 +136,6 @@
 <div id="map"></div>
 <div id="status" role="status">Loading sheet…</div>
 <div id="signin" hidden role="dialog" aria-labelledby="signin-msg"><p id="signin-msg"></p><div id="gbtn"></div></div>
-<script src="https://accounts.google.com/gsi/client"></script>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin=""></script>
-<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" integrity="sha384-eXVCORTRlv4FUUgS/xmOyr66XBVraen8ATNLMESp92FKXLAMiKkerixTiBvXriZr" crossorigin=""></script>
 <script>
 // Sheets in the switcher: [key used in ?sheet=, label, web app URL from that sheet's Apps Script deployment].
 // The first one is the default. The web app returns only the map's columns, so the sheet itself stays private.
@@ -145,6 +144,23 @@ const SHEETS = [
   ['us',     'US',           'https://script.google.com/macros/s/AKfycbyc57-QEMwJ9cscKLCPwFnmPCPgdHCQhS9iZVeOhf0JwP20LRpxQQiBcS3XTiS0-V55/exec'],
 ];
 
+const params = new URLSearchParams(location.search);
+const sheet = SHEETS.find(s => s[0] === params.get('sheet')) || SHEETS[0];
+// ?src= points the map at a local test file, honored only on this computer: on the live site it would let a
+// crafted link send the visitor's sign-in token to someone else's server.
+const local = ['localhost', '127.0.0.1'].includes(location.hostname);
+const src = (local && params.get('src')) || sheet[2];
+const TOKEN = 'mapToken';
+const claims = t => { try { return JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); } catch (e) { return {}; } };
+const fresh = t => t && claims(t).exp * 1000 > Date.now() + 60000; // a minute of slack for the round trip
+const dataUrl = token => { const u = new URL(src, location.href); u.searchParams.set('token', token); return u; };
+// The web app takes a few seconds to answer, so a signed-in visitor's request starts now, while the map scripts load.
+const early = fresh(localStorage.getItem(TOKEN)) && fetch(dataUrl(localStorage.getItem(TOKEN)));
+</script>
+<script id="gsi" src="https://accounts.google.com/gsi/client" async onerror="this.failed = true"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin=""></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" integrity="sha384-eXVCORTRlv4FUUgS/xmOyr66XBVraen8ATNLMESp92FKXLAMiKkerixTiBvXriZr" crossorigin=""></script>
+<script>
 // [label, pin color, icon color] — tier colors match the original My Maps; Facility and Contractor pins are purple and black so they stand out from the map.
 const LAYERS = [
   ['Tier 1 ($1B+)',          '#FF5252', '#fff'],
@@ -346,12 +362,6 @@ new L.Control.Share().addTo(map);
 
 const $ = id => document.getElementById(id);
 const status = $('status'), panel = $('panel'), toggle = $('toggle');
-const params = new URLSearchParams(location.search);
-const sheet = SHEETS.find(s => s[0] === params.get('sheet')) || SHEETS[0];
-// ?src= points the map at a local test file, honored only on this computer: on the live site it would let a
-// crafted link send the visitor's sign-in token to someone else's server.
-const local = ['localhost', '127.0.0.1'].includes(location.hostname);
-const src = (local && params.get('src')) || sheet[2];
 document.title = `${sheet[1]} Projects Map`;
 
 // Sheet switcher: reloads the page with ?sheet=<key>, so each view has its own shareable link.
@@ -482,13 +492,22 @@ $('all').onclick = e => {
 // The sign-in token lasts about an hour and is kept on this device; returning visitors are signed in again
 // automatically. CLIENT_ID is the OAuth client ID from Google Cloud; it must match the one in apps-script.gs.
 const CLIENT_ID = '208947719457-p29rh0prd0g1ktbjf0obi44l45vke2re.apps.googleusercontent.com';
-const TOKEN = 'mapToken';
-const claims = t => { try { return JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); } catch (e) { return {}; } };
-const fresh = t => t && claims(t).exp * 1000 > Date.now() + 60000; // a minute of slack for the round trip
+
+// The sign-in script loads in the background; only visitors who need to sign in wait for it.
+const gsiReady = new Promise((ok, fail) => {
+  if (window.google?.accounts?.id) return ok();
+  if ($('gsi').failed) return fail(new Error('no google')); // failed before this script ran
+  $('gsi').addEventListener('load', ok);
+  $('gsi').addEventListener('error', () => fail(new Error('no google')));
+});
+gsiReady.then(() => google.accounts.id.initialize({
+  client_id: CLIENT_ID, auto_select: true,
+  callback: r => { localStorage.setItem(TOKEN, r.credential); $('signin').hidden = true; gotToken?.(r.credential); },
+}), () => {});
 
 let gotToken;
-function signIn(message) {
-  if (!window.google?.accounts?.id) return Promise.reject(new Error('no google'));
+async function signIn(message) {
+  await gsiReady;
   return new Promise(resolve => {
     gotToken = t => { status.textContent = 'Loading sheet…'; resolve(t); };
     status.textContent = '';
@@ -498,25 +517,23 @@ function signIn(message) {
     google.accounts.id.prompt(); // one-tap: signs a returning visitor straight back in
   });
 }
-if (window.google?.accounts?.id) {
-  google.accounts.id.initialize({
-    client_id: CLIENT_ID, auto_select: true,
-    callback: r => { localStorage.setItem(TOKEN, r.credential); $('signin').hidden = true; gotToken?.(r.credential); },
-  });
-}
 
-async function getData(message) {
+async function getData(message, first) {
   let token = localStorage.getItem(TOKEN);
-  if (!fresh(token)) token = await signIn(message);
-  const url = new URL(src, location.href);
-  url.searchParams.set('token', token);
-  const res = await fetch(url);
+  let req = first && early; // the request already started at the top of the page
+  if (!req) {
+    if (!fresh(token)) token = await signIn(message);
+    req = fetch(dataUrl(token));
+  }
+  const res = await req;
   if (!res.ok) throw new Error(res.status);
   const data = await res.json();
   if (data?.error) {
     localStorage.removeItem(TOKEN);
+    forgetSaved();
+    if (savedReply) { location.reload(); return new Promise(() => {}); } // take the saved copy off the screen too
     if (data.error === 'not allowed') {
-      google.accounts.id.disableAutoSelect(); // let them pick another account instead of looping
+      window.google?.accounts.id.disableAutoSelect(); // let them pick another account instead of looping
       return getData(`${data.email} doesn't have access to the ${sheet[1]} map. Ask the map's owner to add it, or sign in with another account.`);
     }
     return getData('Please sign in again.');
@@ -524,80 +541,110 @@ async function getData(message) {
   const email = claims(token).email;
   $('who').innerHTML = `<span id="age"></span>Signed in as ${esc(email)} · <button type="button" id="signout">Sign out</button>`;
   $('who').hidden = false;
-  $('signout').onclick = () => { localStorage.removeItem(TOKEN); google.accounts.id.disableAutoSelect(); location.reload(); };
+  $('signout').onclick = () => { localStorage.removeItem(TOKEN); forgetSaved(); window.google?.accounts.id.disableAutoSelect(); location.reload(); };
   return data;
 }
 
 // "Data as of 3 min ago": the web app caches the sheet for up to 10 minutes, so say how old this copy is.
 function showAge(updated) {
+  if (!$('age')) return; // the saved copy is drawn before the sign-in line exists
   const mins = Math.floor((Date.now() - updated) / 60000);
   $('age').textContent = `Data as of ${mins < 1 ? 'just now' : mins < 60 ? `${mins} min ago` : new Date(updated).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · `;
 }
 
-getData(`Sign in with Google to see the ${sheet[1]} map.`)
-  .then(reply => {
-    // Newer sheet scripts send { updated, rows }; older ones send just the rows.
-    const data = Array.isArray(reply) ? reply : reply?.rows;
-    if (reply?.updated) { showAge(reply.updated); setInterval(() => showAge(reply.updated), 60000); }
-    if (!Array.isArray(data) || !data.length || !('Address' in data[0])) {
-      status.textContent = 'The sheet returned no projects. Check its Master tab has an Address column.';
-      return;
-    }
-    let missing = 0;
-    for (const r of data.map(normalize)) {
-      const lat = parseFloat(r.Lat), lng = parseFloat(r.Lng);
-      if (!isFinite(lat) || !isFinite(lng)) { missing++; continue; }
-      const layer = layerFor(r);
-      const marker = L.marker([lat, lng], { icon: pin(layer, iconFor(r)), title: r['Name'] || '' }).bindPopup(popup(r));
-      const text = SEARCH_FIELDS.map(f => r[f] || '').join(' ').toLowerCase();
-      items.push({ r, marker, layer, text, value: dollars(r['Project Value']) });
-    }
-    // List order: tier, then biggest project value first.
-    items.sort((a, b) => a.layer - b.layer || b.value - a.value || a.r['Name'].localeCompare(b.r['Name']));
-    items.forEach((it, i) => { it.i = i; });
-    const suggestions = new Set(items.flatMap(it => SUGGEST_FIELDS.map(f => String(it.r[f] || '').trim())).filter(Boolean));
-    $('suggest').innerHTML = [...suggestions].sort().map(s => `<option value="${esc(s)}">`).join('');
+// The last copy of this sheet's data stays on the device, so a signed-in visitor sees the map at once; the sheet's
+// answer replaces it a few seconds later if anything changed. Signing out or losing access deletes it.
+const SAVED = `data_${sheet[0]}`;
+const forgetSaved = () => Object.keys(localStorage).filter(k => k.startsWith('data_')).forEach(k => localStorage.removeItem(k));
+const rowsOf = reply => Array.isArray(reply) ? reply : reply?.rows; // newer sheet scripts send { updated, rows }, older just rows
+let savedReply = null;
+if (early) try { savedReply = JSON.parse(localStorage.getItem(SAVED)); } catch (e) { /* bad copy: ignore it */ }
 
-    // One checkbox per tier that has rows (e.g. the US sheet has no facilities or contractors).
-    // First visit: all unchecked, so the map is empty until a tier is picked. After that, the last ticked tiers.
-    // A shared link (?tiers=0,2) wins over what this device remembers.
-    let saved = [];
-    try { saved = JSON.parse(localStorage.getItem(tiersKey)) || []; } catch (e) { /* bad value: start empty */ }
-    if (params.has('tiers')) saved = params.get('tiers').split(',').filter(Boolean).map(Number);
-    $('q').value = params.get('q') || '';
-    if ([...$('sort').options].some(o => o.value && o.value === params.get('sort'))) $('sort').value = params.get('sort');
-    $('filters').innerHTML = FILTERS.map(f => {
-      const vals = [...new Set(items.map(it => String(it.r[f] || '').trim()).filter(Boolean))].sort();
-      if (vals.length < 2) return '';
-      const cur = params.get(f.toLowerCase());
-      return `<select data-f="${esc(f)}" aria-label="Filter by ${esc(f.toLowerCase())}"><option value="">Any ${esc(f.toLowerCase())}</option>` +
-        vals.map(v => `<option${v === cur ? ' selected' : ''}>${esc(v)}</option>`).join('') + '</select>';
-    }).join('');
-    $('tiers').insertAdjacentHTML('beforeend', LAYERS.map(([label, color], i) =>
-      items.some(it => it.layer === i) ? `<label><input type="checkbox" value="${i}"${saved.includes(i) ? ' checked' : ''}>` +
-        `<span class="swatch" style="background:${color}"></span>${esc(label)}<span class="n" data-i="${i}"></span></label>` : '').join(''));
-    $('all').hidden = false;
-    // Phones: a collapsible color key on the map, since the panel with the swatches is usually closed.
-    const Legend = L.Control.extend({
-      options: { position: 'bottomleft' },
-      onAdd() {
-        const box = L.DomUtil.create('details', 'legend');
-        box.innerHTML = '<summary>Key</summary><ul>' + LAYERS.map(([label, color], i) => items.some(it => it.layer === i)
-          ? `<li><span class="swatch" style="background:${color}"></span>${esc(label)}</li>` : '').join('') + '</ul>';
-        L.DomEvent.disableClickPropagation(box);
-        return box;
-      },
-    });
-    new Legend().addTo(map);
-    const shown = render();
+let ageTimer, legend;
+function trackAge(reply) {
+  clearInterval(ageTimer);
+  if (reply?.updated) { showAge(reply.updated); ageTimer = setInterval(() => showAge(reply.updated), 60000); }
+}
+
+// Builds the pins, list and filters from the sheet's rows. `again`: replacing the saved copy, so keep the
+// visitor's current view (the address bar follows it) and don't move the map.
+function show(reply, again) {
+  const data = rowsOf(reply);
+  trackAge(reply);
+  if (!Array.isArray(data) || !data.length || !('Address' in data[0])) {
+    status.textContent = 'The sheet returned no projects. Check its Master tab has an Address column.';
+    return;
+  }
+  if (again) { cluster.clearLayers(); legend?.remove(); $('tiers').querySelectorAll('label').forEach(l => l.remove()); }
+  const params = new URLSearchParams(location.search);
+  items = [];
+  let missing = 0;
+  for (const r of data.map(normalize)) {
+    const lat = parseFloat(r.Lat), lng = parseFloat(r.Lng);
+    if (!isFinite(lat) || !isFinite(lng)) { missing++; continue; }
+    const layer = layerFor(r);
+    const marker = L.marker([lat, lng], { icon: pin(layer, iconFor(r)), title: r['Name'] || '' }).bindPopup(popup(r));
+    const text = SEARCH_FIELDS.map(f => r[f] || '').join(' ').toLowerCase();
+    items.push({ r, marker, layer, text, value: dollars(r['Project Value']) });
+  }
+  // List order: tier, then biggest project value first.
+  items.sort((a, b) => a.layer - b.layer || b.value - a.value || a.r['Name'].localeCompare(b.r['Name']));
+  items.forEach((it, i) => { it.i = i; });
+  const suggestions = new Set(items.flatMap(it => SUGGEST_FIELDS.map(f => String(it.r[f] || '').trim())).filter(Boolean));
+  $('suggest').innerHTML = [...suggestions].sort().map(s => `<option value="${esc(s)}">`).join('');
+
+  // One checkbox per tier that has rows (e.g. the US sheet has no facilities or contractors).
+  // First visit: all unchecked, so the map is empty until a tier is picked. After that, the last ticked tiers.
+  // A shared link (?tiers=0,2) wins over what this device remembers.
+  let saved = [];
+  try { saved = JSON.parse(localStorage.getItem(tiersKey)) || []; } catch (e) { /* bad value: start empty */ }
+  if (params.has('tiers')) saved = params.get('tiers').split(',').filter(Boolean).map(Number);
+  $('q').value = params.get('q') || '';
+  if ([...$('sort').options].some(o => o.value && o.value === params.get('sort'))) $('sort').value = params.get('sort');
+  $('filters').innerHTML = FILTERS.map(f => {
+    const vals = [...new Set(items.map(it => String(it.r[f] || '').trim()).filter(Boolean))].sort();
+    if (vals.length < 2) return '';
+    const cur = params.get(f.toLowerCase());
+    return `<select data-f="${esc(f)}" aria-label="Filter by ${esc(f.toLowerCase())}"><option value="">Any ${esc(f.toLowerCase())}</option>` +
+      vals.map(v => `<option${v === cur ? ' selected' : ''}>${esc(v)}</option>`).join('') + '</select>';
+  }).join('');
+  $('tiers').insertAdjacentHTML('beforeend', LAYERS.map(([label, color], i) =>
+    items.some(it => it.layer === i) ? `<label><input type="checkbox" value="${i}"${saved.includes(i) ? ' checked' : ''}>` +
+      `<span class="swatch" style="background:${color}"></span>${esc(label)}<span class="n" data-i="${i}"></span></label>` : '').join(''));
+  $('all').hidden = false;
+  // Phones: a collapsible color key on the map, since the panel with the swatches is usually closed.
+  const Legend = L.Control.extend({
+    options: { position: 'bottomleft' },
+    onAdd() {
+      const box = L.DomUtil.create('details', 'legend');
+      box.innerHTML = '<summary>Key</summary><ul>' + LAYERS.map(([label, color], i) => items.some(it => it.layer === i)
+        ? `<li><span class="swatch" style="background:${color}"></span>${esc(label)}</li>` : '').join('') + '</ul>';
+      L.DomEvent.disableClickPropagation(box);
+      return box;
+    },
+  });
+  legend = new Legend().addTo(map);
+  const shown = render();
+  if (!again) {
     fit(shown.length ? shown : items); // nothing ticked: still frame the sheet's area
     if ($('sort').value === 'near') $('sort').onchange(); // a shared "nearest" link: get this viewer's location
     // On a phone an empty map gives no clue what to do, so open the panel with the tier boxes.
     if (!shown.length && narrow.matches) setPanel(true);
-    status.textContent = missing ? `${missing} of ${data.length} rows have no Lat/Lng yet. Run Map → Fill coordinates in the sheet.` : '';
+  }
+  status.textContent = missing ? `${missing} of ${data.length} rows have no Lat/Lng yet. Run Map → Fill coordinates in the sheet.` : '';
+}
+
+if (savedReply) show(savedReply);
+getData(`Sign in with Google to see the ${sheet[1]} map.`, true)
+  .then(reply => {
+    try { localStorage.setItem(SAVED, JSON.stringify(reply)); }
+    catch (e) { localStorage.removeItem(SAVED); } // too big for this device's storage: just don't keep a copy
+    if (savedReply && JSON.stringify(rowsOf(savedReply)) === JSON.stringify(rowsOf(reply))) trackAge(reply);
+    else show(reply, !!savedReply);
   })
   // A web app error comes back as an HTML page, so res.json() lands here too.
   .catch(err => {
+    if (savedReply) { status.textContent = "Couldn't reach the sheet, so this is the copy saved on this device."; return; }
     status.textContent = err.message === 'no google' ? 'Could not load Google sign-in. Check your connection or turn off blockers for this site, then reload.'
       : 'Could not load the sheet. Is its web app deployed with access "Anyone"?';
   });

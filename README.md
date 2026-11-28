@@ -20,6 +20,8 @@ On phones, a **Key** in the bottom-left corner of the map shows what each pin co
 
 **How fresh the data is:** the bottom of the panel says "Data as of N min ago", which is when the web app last read the sheet (it keeps a copy for up to 10 minutes).
 
+**Fast reopening:** each device keeps the last copy of each sheet's map data it loaded (typically well under 1 MB). While you're signed in, the map shows that copy at once and swaps in the sheet's latest a few seconds later if anything changed, without moving the map or losing your filters. Without a connection it keeps showing the saved copy and says so. **Sign out** deletes the saved copies, and so does losing access (the page reloads to the sign-in screen).
+
 **Add to Home Screen:** on a phone, use the browser's Share menu → **Add to Home Screen** (iPhone) or **Install app** (Android). The map then opens full-screen from its own icon. The first time, sign in again inside the app.
 
 **Sharing a view:** the address bar keeps the current search, dropdowns and ticked tiers, so the link opens the same view for someone else. The **Share** button (top right) opens the phone's share sheet, or copies the link on a computer. They still have to sign in with a Google account that's on the sheet's Access tab. Switching sheets with the dropdown starts that sheet's view fresh.
