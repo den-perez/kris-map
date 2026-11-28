@@ -46,6 +46,10 @@
   #list .swatch { margin-top: 5px; }
   #list .name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-weight: 500; }
   #list .meta { grid-column: 2; color: #666; font-size: 12px; }
+  .tag { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 8px; font-size: 11px; font-weight: 600;
+    background: #FFF3C4; color: #5D4300; border: 1px solid #E6C200; vertical-align: 1px; }
+  /* Yellow dot on pins of projects that are new or changed this week. */
+  .badge { position: absolute; top: -6px; right: -4px; width: 9px; height: 9px; border-radius: 50%; background: #FFD600; border: 2px solid #263238; }
   #list .more { padding: 10px 12px; color: #666; font-size: 13px; }
   #toggle { display: none; }
 
@@ -83,9 +87,9 @@
     box-sizing: border-box; padding: 20px; background: #fff; border-radius: 10px; box-shadow: 0 4px 24px rgba(0,0,0,.25); text-align: center; }
   #signin p { margin: 0 0 14px; }
   #gbtn { display: flex; justify-content: center; min-height: 44px; }
-  #filters { display: flex; gap: 6px; margin-top: 8px; }
+  #filters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   #filters:empty { display: none; }
-  #filters select { flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 5px 4px; border: 1px solid #ccc; border-radius: 6px; background: #fff; }
+  #filters select { flex: 1 1 28%; min-width: 0; font: inherit; font-size: 13px; padding: 5px 4px; border: 1px solid #ccc; border-radius: 6px; background: #fff; }
   #filters select:focus { outline: 2px solid #0288D1; outline-offset: 0; }
   #filters select.on { border-color: #0288D1; background: #e3f0fa; } /* a filter is narrowing the list */
   .streets { filter: saturate(.35) brightness(1.04); } /* calmer street map so the pins stand out; satellite stays true-color */
@@ -98,6 +102,10 @@
   #sort:focus { outline: 2px solid #0288D1; outline-offset: 0; }
   @media (pointer: coarse) { #sort { font-size: 16px; } }
   #count .clear { margin-left: 6px; font: inherit; color: #0277BD; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
+  /* Cluster bubbles in neutral white, so their default green/yellow/orange never look like a pin color. */
+  .marker-cluster-small, .marker-cluster-medium, .marker-cluster-large { background: rgba(255,255,255,.55); }
+  .marker-cluster-small div, .marker-cluster-medium div, .marker-cluster-large div {
+    background: #fff; color: #263238; font-weight: 700; box-shadow: inset 0 0 0 2px #455A64; }
   .legend { background: #fff; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.3); font-size: 12px; max-width: 200px; }
   .legend summary { padding: 6px 10px; font-weight: 600; cursor: pointer; }
   .legend ul { list-style: none; margin: 0; padding: 0 10px 8px; display: grid; gap: 4px; }
@@ -169,10 +177,10 @@ const early = credential() && fetch(dataUrl(credential()));
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin=""></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" integrity="sha384-eXVCORTRlv4FUUgS/xmOyr66XBVraen8ATNLMESp92FKXLAMiKkerixTiBvXriZr" crossorigin=""></script>
 <script>
-// [label, pin color, icon color] — tier colors match the original My Maps, except Tier 2 is brown, not olive, so it doesn't blend with the green clusters; Facility and Contractor pins are purple and black so they stand out from the map; Completed/Cancelled is a muted blue-gray, unlike Tier 1 red and the orange clusters.
+// [label, pin color, icon color] — tier colors match the original My Maps (cluster bubbles are white so they never match a pin); Facility and Contractor pins are purple and black so they stand out from the map; Completed/Cancelled is a muted blue-gray, unlike Tier 1 red and the orange clusters.
 const LAYERS = [
   ['Tier 1 ($1B+)',          '#FF5252', '#fff'],
-  ['Tier 2 ($500M–1B)',      '#6D4C41', '#fff'],
+  ['Tier 2 ($500M–1B)',      '#AFB42B', '#fff'],
   ['Tier 3 ($100–500M)',     '#0097A7', '#fff'],
   ['Tier 4 / No Value',      '#0288D1', '#fff'],
   ['Facility Accounts',      '#8E24AA', '#fff'],
@@ -247,15 +255,29 @@ function dollars(s) {
   if (!m) return 0;
   return (parseFloat(m[1].replace(/,/g, '')) || 0) * ({ K: 1e3, M: 1e6, B: 1e9 }[(m[2] || '').toUpperCase()] || 1);
 }
+// 4.2e9 → "$4.2B", 9.68e8 → "$968M", 1.2e6 → "$1.2M", 45000 → "$45K".
+function money(v) {
+  const [n, unit] = v >= 1e9 ? [v / 1e9, 'B'] : v >= 1e6 ? [v / 1e6, 'M'] : v >= 1e3 ? [v / 1e3, 'K'] : [v, ''];
+  return '$' + (n >= 100 ? Math.round(n) : +n.toFixed(1)) + unit;
+}
+
+// Months counted like when(): this month and the Start dropdown's choices.
+const thisMonth = () => new Date().getFullYear() * 12 + new Date().getMonth();
+// Filters that aren't a plain column match: start-date windows and "new or updated this week".
+const SPECIAL = {
+  Start: (it, v) => { const w = when(it.r['Start Date']), m = thisMonth(); return v === 'started' ? w < m : w >= m && w < m + Number(v); },
+  New: it => !!it.mark,
+};
 
 const pinCache = {};
-function pin(layer, icon) {
-  const key = layer + icon;
+function pin(layer, icon, mark) {
+  const key = layer + icon + (mark ? '*' : '');
   if (!pinCache[key]) {
     const [, bg, fg] = LAYERS[layer];
     pinCache[key] = L.divIcon({
       className: '', iconSize: [28, 28], iconAnchor: [14, 34], popupAnchor: [0, -32],
-      html: `<div class="pin" style="background:${bg}"><span class="material-symbols-outlined" style="color:${fg}">${icon}</span></div>`,
+      html: `<div class="pin" style="background:${bg}"><span class="material-symbols-outlined" style="color:${fg}">${icon}</span></div>` +
+        (mark ? '<i class="badge"></i>' : ''),
     });
   }
   return pinCache[key];
@@ -405,7 +427,7 @@ function render() {
   const counts = LAYERS.map(() => 0);
   const shown = [], add = [], remove = [];
   for (const it of items) {
-    const match = words.every(w => it.text.includes(w)) && picks.every(([f, v]) => String(it.r[f] || '').trim() === v);
+    const match = words.every(w => it.text.includes(w)) && picks.every(([f, v]) => SPECIAL[f] ? SPECIAL[f](it, v) : String(it.r[f] || '').trim() === v);
     if (match) counts[it.layer]++;
     const visible = match && on[it.layer];
     if (visible !== cluster.hasLayer(it.marker)) (visible ? add : remove).push(it.marker);
@@ -429,9 +451,10 @@ function render() {
   selAll.hidden = ticks === boxes.length;
   deselAll.hidden = ticks === 0;
   const narrowed = words.length || picks.length;
+  const total = shown.reduce((sum, it) => sum + it.value, 0); // total Project Value of what's shown
   $('count').textContent = !on.some(Boolean) ? 'Select a tier to show projects.'
     : !shown.length && narrowed ? 'No projects match.'
-    : `${shown.length} of ${items.length} projects` + (shown.length > LIST_LIMIT ? ` · first ${LIST_LIMIT} listed` : '');
+    : `${shown.length} of ${items.length} projects` + (total ? ` · ${money(total)}` : '') + (shown.length > LIST_LIMIT ? ` · first ${LIST_LIMIT} listed` : '');
   if (narrowed) $('count').insertAdjacentHTML('beforeend', '<button type="button" class="clear">Clear filters</button>');
   // List order: the Sort dropdown. `items` is already tier-then-value; the others re-sort a copy.
   const sort = $('sort').value;
@@ -446,7 +469,7 @@ function render() {
     const meta = [sort === 'near' && here ? `${miles(it).toFixed(1)} mi` : '', sort === 'start' ? it.r['Start Date'] : '',
       it.r['Project Value'], it.r['Category']].filter(Boolean).map(esc).join(' · ');
     return `<li><button type="button" data-i="${it.i}"><span class="swatch" style="background:${LAYERS[it.layer][1]}"></span>` +
-      `<span class="name">${esc(it.r['Name'] || 'Untitled')}</span>${meta ? `<span class="meta">${meta}</span>` : ''}</button></li>`;
+      `<span class="name">${esc(it.r['Name'] || 'Untitled')}${it.mark ? `<span class="tag">${it.mark === 'new' ? 'New' : 'Updated'}</span>` : ''}</span>${meta ? `<span class="meta">${meta}</span>` : ''}</button></li>`;
   }).join('') + (shown.length > LIST_LIMIT ? `<li class="more">${shown.length - LIST_LIMIT} more on the map. Search to narrow the list.</li>` : '');
   return shown;
 }
@@ -560,8 +583,30 @@ function showAge(updated) {
 // The last copy of this sheet's data stays on the device, so a signed-in visitor sees the map at once; the sheet's
 // answer replaces it a few seconds later if anything changed. Signing out or losing access deletes it.
 const SAVED = `data_${sheet[0]}`;
-// Saved copies and passes for every sheet.
-const forgetSaved = () => Object.keys(localStorage).filter(k => /^(data|pass)_/.test(k)).forEach(k => localStorage.removeItem(k));
+// Saved copies, passes and change marks for every sheet.
+const forgetSaved = () => Object.keys(localStorage).filter(k => /^(data|pass|changes)_/.test(k)).forEach(k => localStorage.removeItem(k));
+
+// "New" and "Updated" marks: each time the sheet answers, its rows are compared with the copy saved last time.
+// A project that wasn't there is new; one whose columns changed is updated. Marks last a week on this device.
+const CHANGES = `changes_${sheet[0]}`, MARK_DAYS = 7;
+const keyOf = r => `${r['Name'] || r['Project Name'] || ''}|${r['Address'] || ''}`;
+function loadMarks() {
+  let marks = {};
+  try { marks = JSON.parse(localStorage.getItem(CHANGES)) || {}; } catch (e) { /* bad value: start over */ }
+  for (const k in marks) if (Date.now() - marks[k][1] > MARK_DAYS * 86400000) delete marks[k];
+  return marks; // { key: ['new' | 'updated', when noticed] }
+}
+function noteChanges(before, rows) {
+  const marks = loadMarks();
+  if (!Array.isArray(before) || !before.length || !Array.isArray(rows)) return; // first load on this device: nothing to compare
+  const old = new Map(before.map(r => [keyOf(r), JSON.stringify(r)]));
+  for (const r of rows) {
+    const k = keyOf(r), was = old.get(k);
+    if (was === undefined) marks[k] = ['new', Date.now()];
+    else if (was !== JSON.stringify(r) && marks[k]?.[0] !== 'new') marks[k] = ['updated', Date.now()];
+  }
+  try { localStorage.setItem(CHANGES, JSON.stringify(marks)); } catch (e) { /* storage full: skip the marks */ }
+}
 const rowsOf = reply => Array.isArray(reply) ? reply : reply?.rows; // newer sheet scripts send { updated, rows }, older just rows
 let savedReply = null;
 if (early) try { savedReply = JSON.parse(localStorage.getItem(SAVED)); } catch (e) { /* bad copy: ignore it */ }
@@ -570,6 +615,16 @@ let ageTimer, legend;
 function trackAge(reply) {
   clearInterval(ageTimer);
   if (reply?.updated) { showAge(reply.updated); ageTimer = setInterval(() => showAge(reply.updated), 60000); }
+}
+
+// The Start and New dropdowns, each only when it would do something.
+function special(params) {
+  const menu = (f, label, opts) => `<select data-f="${f}" aria-label="${label}">` + opts.map(([v, text]) =>
+    `<option value="${v}"${v && v === params.get(f.toLowerCase()) ? ' selected' : ''}>${text}</option>`).join('') + '</select>';
+  const changed = items.filter(it => it.mark).length;
+  return (items.some(it => isFinite(when(it.r['Start Date']))) ? menu('Start', 'Filter by start date', [['', 'Any start'],
+    ['3', 'Starts within 3 months'], ['6', 'Starts within 6 months'], ['12', 'Starts within 12 months'], ['started', 'Already started']]) : '') +
+    (changed ? menu('New', 'Show new or updated projects', [['', 'Any project'], ['1', `New or updated (${changed})`]]) : '');
 }
 
 // Builds the pins, list and filters from the sheet's rows. `again`: replacing the saved copy, so keep the
@@ -584,14 +639,15 @@ function show(reply, again) {
   if (again) { cluster.clearLayers(); legend?.remove(); $('tiers').querySelectorAll('label').forEach(l => l.remove()); }
   const params = new URLSearchParams(location.search);
   items = [];
+  const marks = loadMarks();
   let missing = 0;
   for (const r of data.map(normalize)) {
     const lat = parseFloat(r.Lat), lng = parseFloat(r.Lng);
     if (!isFinite(lat) || !isFinite(lng)) { missing++; continue; }
-    const layer = layerFor(r);
-    const marker = L.marker([lat, lng], { icon: pin(layer, iconFor(r)), title: r['Name'] || '' }).bindPopup(popup(r));
+    const layer = layerFor(r), mark = marks[keyOf(r)]?.[0];
+    const marker = L.marker([lat, lng], { icon: pin(layer, iconFor(r), mark), title: r['Name'] || '' }).bindPopup(popup(r));
     const text = SEARCH_FIELDS.map(f => r[f] || '').join(' ').toLowerCase();
-    items.push({ r, marker, layer, text, value: dollars(r['Project Value']) });
+    items.push({ r, marker, layer, text, mark, value: dollars(r['Project Value']) });
   }
   // List order: tier, then biggest project value first.
   items.sort((a, b) => a.layer - b.layer || b.value - a.value || a.r['Name'].localeCompare(b.r['Name']));
@@ -613,7 +669,7 @@ function show(reply, again) {
     const cur = params.get(f.toLowerCase());
     return `<select data-f="${esc(f)}" aria-label="Filter by ${esc(f.toLowerCase())}"><option value="">Any ${esc(f.toLowerCase())}</option>` +
       vals.map(v => `<option${v === cur ? ' selected' : ''}>${esc(v)}</option>`).join('') + '</select>';
-  }).join('');
+  }).join('') + special(params);
   $('tiers').insertAdjacentHTML('beforeend', LAYERS.map(([label, color], i) =>
     items.some(it => it.layer === i) ? `<label><input type="checkbox" value="${i}"${saved.includes(i) ? ' checked' : ''}>` +
       `<span class="swatch" style="background:${color}"></span>${esc(label)}<span class="n" data-i="${i}"></span></label>` : '').join(''));
@@ -643,6 +699,9 @@ function show(reply, again) {
 if (savedReply) show(savedReply);
 getData(`Sign in with Google to see the ${sheet[1]} map.`, true)
   .then(reply => {
+    let before = null;
+    try { before = rowsOf(JSON.parse(localStorage.getItem(SAVED))); } catch (e) { /* no usable copy */ }
+    noteChanges(before, rowsOf(reply));
     try { localStorage.setItem(SAVED, JSON.stringify(reply)); }
     catch (e) { localStorage.removeItem(SAVED); } // too big for this device's storage: just don't keep a copy
     if (savedReply && JSON.stringify(rowsOf(savedReply)) === JSON.stringify(rowsOf(reply))) trackAge(reply);
