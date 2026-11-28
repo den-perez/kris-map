@@ -42,7 +42,7 @@ The sheet needs an `Address` column. A name column can be `Name` or `Project Nam
 3. Put that URL in the `SHEETS` list near the top of the script in `index.html` (add a new line for a new sheet).
 4. Reload the sheet. A **Map** menu appears. Run **Map → Fill coordinates**; if it says rows are left, run it again. Optional: **Map → Auto-fill every hour** so new rows get coordinates on their own.
 5. Turn off link sharing on the sheet (**Share → General access → Restricted**). The map keeps working through the web app.
-6. Add a tab named **Access** and list the Google email of each person allowed to see the map in column A, one per row (a header like `Email` in A1 is fine). Until this tab exists nobody gets any data. To remove someone, delete their row; they lose access on their next visit (at most an hour later).
+6. Add a tab named **Access** and list the Google email of each person allowed to see the map in column A, one per row (a header like `Email` in A1 is fine). Until this tab exists nobody gets any data. To remove someone, delete their row; they lose access on their next visit.
 
 Rows whose address can't be found get `not found` in `Lat`. Fix the address, clear that cell, and run Fill coordinates again.
 
@@ -54,7 +54,7 @@ Rows whose address can't be found get `not found` in `Lat`. Fix the address, cle
 
 Only the columns in `PUBLIC_COLUMNS` at the top of `apps-script.gs` leave the sheet: names, address, category, tier, status, zone, dates, contractor, value, notes, icon and coordinates. Other columns and other tabs stay private. To hide a column (for example `Notes`), remove it from that list and redeploy as above.
 
-The map page and web app URL are public, but the web app hands out data only to visitors signed in with Google whose email is on that sheet's **Access** tab. Each sheet has its own list. Viewers never get access to the sheet itself. They stay signed in on that device for about an hour at a time, renewed automatically; **Sign out** at the bottom of the panel ends it.
+The map page and web app URL are public, but the web app hands out data only to visitors signed in with Google whose email is on that sheet's **Access** tab. Each sheet has its own list. Viewers never get access to the sheet itself. After signing in with Google, the sheet's script gives that device a 7-day pass, renewed each day they use the map, so regular viewers rarely see the sign-in screen. The Access tab is still checked on every visit, so removing someone takes effect on their next load. **Sign out** at the bottom of the panel deletes the pass. To cancel everyone's pass at once, open the sheet's Apps Script → **Project Settings → Script properties** and delete `PASS_SECRET`.
 
 ### Google sign-in setup (once)
 

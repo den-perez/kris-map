@@ -153,9 +153,17 @@ const src = (local && params.get('src')) || sheet[2];
 const TOKEN = 'mapToken';
 const claims = t => { try { return JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); } catch (e) { return {}; } };
 const fresh = t => t && claims(t).exp * 1000 > Date.now() + 60000; // a minute of slack for the round trip
-const dataUrl = token => { const u = new URL(src, location.href); u.searchParams.set('token', token); return u; };
+// After a Google sign-in the sheet's script hands out its own 7-day pass, renewed daily, so visitors stay signed in.
+// Each sheet makes its own. A pass is "<base64 {e: email, x: expiry}>.<signature>"; only the script can check the signature.
+const PASS = `pass_${sheet[0]}`;
+const passClaims = p => claims('.' + String(p).split('.')[0]);
+const passOk = p => p && passClaims(p).x * 1000 > Date.now() + 60000;
+// What to send the web app: the pass if it's still good, else a fresh Google sign-in, else null (must sign in).
+const credential = () => passOk(localStorage.getItem(PASS)) ? ['pass', localStorage.getItem(PASS)]
+  : fresh(localStorage.getItem(TOKEN)) ? ['token', localStorage.getItem(TOKEN)] : null;
+const dataUrl = ([key, value]) => { const u = new URL(src, location.href); u.searchParams.set(key, value); return u; };
 // The web app takes a few seconds to answer, so a signed-in visitor's request starts now, while the map scripts load.
-const early = fresh(localStorage.getItem(TOKEN)) && fetch(dataUrl(localStorage.getItem(TOKEN)));
+const early = credential() && fetch(dataUrl(credential()));
 </script>
 <script id="gsi" src="https://accounts.google.com/gsi/client" async onerror="this.failed = true"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin=""></script>
@@ -519,12 +527,8 @@ async function signIn(message) {
 }
 
 async function getData(message, first) {
-  let token = localStorage.getItem(TOKEN);
   let req = first && early; // the request already started at the top of the page
-  if (!req) {
-    if (!fresh(token)) token = await signIn(message);
-    req = fetch(dataUrl(token));
-  }
+  if (!req) req = fetch(dataUrl(credential() || ['token', await signIn(message)]));
   const res = await req;
   if (!res.ok) throw new Error(res.status);
   const data = await res.json();
@@ -538,7 +542,8 @@ async function getData(message, first) {
     }
     return getData('Please sign in again.');
   }
-  const email = claims(token).email;
+  if (data.pass) { localStorage.setItem(PASS, data.pass); delete data.pass; } // a new or renewed pass
+  const email = passClaims(localStorage.getItem(PASS)).e || claims(localStorage.getItem(TOKEN)).email;
   $('who').innerHTML = `<span id="age"></span>Signed in as ${esc(email)} · <button type="button" id="signout">Sign out</button>`;
   $('who').hidden = false;
   $('signout').onclick = () => { localStorage.removeItem(TOKEN); forgetSaved(); window.google?.accounts.id.disableAutoSelect(); location.reload(); };
@@ -555,7 +560,8 @@ function showAge(updated) {
 // The last copy of this sheet's data stays on the device, so a signed-in visitor sees the map at once; the sheet's
 // answer replaces it a few seconds later if anything changed. Signing out or losing access deletes it.
 const SAVED = `data_${sheet[0]}`;
-const forgetSaved = () => Object.keys(localStorage).filter(k => k.startsWith('data_')).forEach(k => localStorage.removeItem(k));
+// Saved copies and passes for every sheet.
+const forgetSaved = () => Object.keys(localStorage).filter(k => /^(data|pass)_/.test(k)).forEach(k => localStorage.removeItem(k));
 const rowsOf = reply => Array.isArray(reply) ? reply : reply?.rows; // newer sheet scripts send { updated, rows }, older just rows
 let savedReply = null;
 if (early) try { savedReply = JSON.parse(localStorage.getItem(SAVED)); } catch (e) { /* bad copy: ignore it */ }

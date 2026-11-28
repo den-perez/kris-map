@@ -12,16 +12,60 @@ const PUBLIC_COLUMNS = ['Name', 'Project Name', 'Record Type', 'Category', 'Tier
 
 // Who may see the map: visitors sign in with Google on the map page, which sends their sign-in token
 // (?token=). Only emails listed in column A of the Access tab get data. No Access tab = nobody.
+// A Google sign-in lasts an hour, so after one the map gets its own 7-day pass (?pass=) and uses that instead.
+// The Access tab is still checked on every visit, so removing an email cuts that person off at once.
 // CLIENT_ID is the OAuth client ID from Google Cloud; it must match CLIENT_ID in index.html.
 const CLIENT_ID = '208947719457-p29rh0prd0g1ktbjf0obi44l45vke2re.apps.googleusercontent.com';
 const ACCESS_TAB = 'Access';
 
 function doGet(e) {
-  const email = verifiedEmail(e && e.parameter.token);
+  const p = (e && e.parameter) || {};
+  const pass = p.pass ? readPass(p.pass) : null;
+  const email = pass ? pass.e : verifiedEmail(p.token);
   const denied = !email ? { error: 'signin' }
     : !allowedEmails().has(email) ? { error: 'not allowed', email } : null;
-  return ContentService.createTextOutput(denied ? JSON.stringify(denied) : cachedRowsJson())
-    .setMimeType(ContentService.MimeType.JSON);
+  let json = denied ? JSON.stringify(denied) : cachedRowsJson();
+  // A new pass after a Google sign-in, and once a day after that, so regular visitors stay signed in.
+  // The rows JSON is an object ("{...}"), so the pass is spliced in at the front rather than re-parsing it.
+  if (!denied && json[0] === '{' && (!pass || pass.x * 1000 - Date.now() < (PASS_DAYS - 1) * 86400000)) {
+    json = '{"pass":' + JSON.stringify(makePass(email)) + ',' + json.slice(1);
+  }
+  return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
+}
+
+// Pass = base64(JSON {e: email, x: expiry in seconds}) + "." + HMAC signature, made with a secret only this
+// script knows, so nobody can make or alter one. Returns { e, x } for a genuine unexpired pass, else null.
+const PASS_DAYS = 7;
+function makePass(email) {
+  const body = Utilities.base64EncodeWebSafe(JSON.stringify({ e: email, x: Math.floor(Date.now() / 1000) + PASS_DAYS * 86400 }));
+  return body + '.' + passSignature(body);
+}
+function readPass(pass) {
+  const [body, sig] = String(pass).split('.');
+  if (!body || !sig) return null;
+  const want = passSignature(body);
+  let diff = sig.length ^ want.length; // compare every character, so timing doesn't reveal how much matched
+  for (let i = 0; i < want.length; i++) diff |= want.charCodeAt(i) ^ sig.charCodeAt(i);
+  if (diff) return null;
+  try {
+    const c = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(body)).getDataAsString());
+    return typeof c.e === 'string' && c.x * 1000 > Date.now() ? c : null;
+  } catch (err) { return null; }
+}
+function passSignature(body) {
+  return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(body, passSecret()));
+}
+// Made on first use and kept in this script's properties. Deleting PASS_SECRET (Project Settings → Script
+// properties) cancels every pass; to cut one person off, remove them from the Access tab instead.
+function passSecret() {
+  const props = PropertiesService.getScriptProperties();
+  let secret = props.getProperty('PASS_SECRET');
+  if (!secret) {
+    // shortcut: two first visits at the same moment can each make a secret; the loser just signs in again.
+    secret = Utilities.getUuid() + Utilities.getUuid();
+    props.setProperty('PASS_SECRET', secret);
+  }
+  return secret;
 }
 
 // Asks Google whether the token is genuine, unexpired and made for this map; returns its email or ''.
