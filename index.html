@@ -75,6 +75,10 @@
   .pin { width: 28px; height: 28px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
     display: grid; place-items: center; border: 1.5px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.45); box-sizing: border-box; }
   .pin .material-symbols-outlined { transform: rotate(45deg); font-size: 17px; }
+  /* Hovering a project in the list: its pin (or the bubble it's in) grows and comes to the front. */
+  .pin, .marker-cluster div { transition: transform .12s ease-out; }
+  .hovered .pin { transform: rotate(-45deg) scale(1.4); box-shadow: 0 0 0 3px #fff, 0 2px 8px rgba(0,0,0,.6); }
+  .marker-cluster.hovered div { transform: scale(1.35); box-shadow: 0 0 0 3px #fff, 0 2px 8px rgba(0,0,0,.5); }
   .leaflet-popup-content { max-width: 320px; }
   .leaflet-popup-content h3 { margin: 0 0 6px; font-size: 15px; }
   .leaflet-popup-content dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; }
@@ -546,6 +550,20 @@ $('list').onclick = e => {
     if (el) { el.classList.remove('picked'); void el.offsetWidth; el.classList.add('picked'); }
   });
 };
+// Hover or keyboard focus on a list row: make its pin pop out on the map (or the bubble it's in, if clustered).
+let hovered;
+function hover(it) {
+  const m = it && cluster.getVisibleParent(it.marker); // null when the pin is filtered off the map
+  if (m === hovered) return;
+  if (hovered) { hovered.getElement()?.classList.remove('hovered'); hovered.setZIndexOffset(0); }
+  hovered = m;
+  if (m) { m.getElement()?.classList.add('hovered'); m.setZIndexOffset(1000); }
+}
+const rowItem = e => { const b = e.target.closest('button[data-i]'); return b && items[b.dataset.i]; };
+$('list').addEventListener('mouseover', e => hover(rowItem(e)));
+$('list').addEventListener('focusin', e => hover(rowItem(e)));
+$('list').addEventListener('mouseleave', () => hover(null));
+$('list').addEventListener('focusout', () => hover(null));
 let timer;
 $('q').oninput = () => { clearTimeout(timer); timer = setTimeout(() => fit(render()), 120); };
 $('tiers').onchange = () => fit(render());
