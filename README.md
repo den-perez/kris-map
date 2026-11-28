@@ -59,7 +59,7 @@ The sign-in button needs an OAuth client ID from Google Cloud:
 
 ## Pins
 
-- Layers come from `Record Type` and `Tier / Priority`: Tier 1–4, Facility Accounts, Contractors. A row whose `Status` contains "Completed" or "Cancelled" goes to the Completed/Cancelled layer instead. Empty layers are hidden. Pin colors match the original My Maps.
+- Layers come from `Record Type` and `Tier / Priority`: Tier 1–4, Facility Accounts, Contractors. A row whose `Status` contains "Completed" or "Cancelled" goes to the Completed/Cancelled layer instead. Empty layers are hidden. Tier pin colors match the original My Maps; Facility Accounts are purple and Contractors black so they stand out from the map.
 - The icon inside each pin comes from `Category` (factory for Manufacturing, school for Education, and so on).
 
 ### Choosing an icon for a row
