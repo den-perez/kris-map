@@ -102,6 +102,18 @@
   #sortrow { display: flex; align-items: center; gap: 6px; color: #666; font-size: 13px; padding-bottom: 6px; }
   #sort { flex: 1; font: inherit; color: #222; padding: 4px 6px; border: 1px solid #ccc; border-radius: 6px; background: #fff; }
   #sort:focus { outline: 2px solid #0288D1; outline-offset: 0; }
+  #listtools { display: flex; align-items: center; gap: 8px; color: #444; font-size: 13px; padding-bottom: 6px; }
+  #listtools label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  #csv { margin-left: auto; font: inherit; color: #0277BD; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
+  #csv:disabled { color: #999; cursor: default; text-decoration: none; }
+  #count .place { display: block; margin-top: 4px; font: inherit; color: #0277BD; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
+  #list .starred { color: #F9A825; margin-left: 4px; }
+  .leaflet-popup-content .star { margin: 8px 0 0 14px; font: inherit; font-weight: 600; color: #8D6E00; background: none; border: 0; padding: 0; cursor: pointer; }
+  /* Project names beside the pins once zoomed in close (the map gets class "labels"). */
+  .plabel { display: none; position: absolute; left: 24px; top: 0; max-width: 170px; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; font: 600 11px/1.4 system-ui, -apple-system, sans-serif; color: #212121; background: rgba(255,255,255,.9);
+    padding: 1px 5px; border-radius: 3px; box-shadow: 0 1px 2px rgba(0,0,0,.3); pointer-events: none; }
+  .labels .plabel { display: block; }
   @media (pointer: coarse) { #sort { font-size: 16px; } }
   #count .clear { margin-left: 6px; font: inherit; color: #0277BD; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
   .legend { background: #fff; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.3); font-size: 12px; max-width: 200px; }
@@ -134,6 +146,8 @@
     <option value="start">Start date</option>
     <option value="near">Nearest to me</option>
   </select></label>
+  <div id="listtools"><label><input type="checkbox" id="inview"> Only what's on the map</label>
+    <button type="button" id="csv">Download list</button></div>
   <div id="count" aria-live="polite"></div>
   <ol id="list"></ol>
   <div id="who" hidden></div>
@@ -264,18 +278,22 @@ const thisMonth = () => new Date().getFullYear() * 12 + new Date().getMonth();
 // Filters that aren't a plain column match: start-date windows and "new or updated this week".
 const SPECIAL = {
   Start: (it, v) => { const w = when(it.r['Start Date']), m = thisMonth(); return v === 'started' ? w < m : w >= m && w < m + Number(v); },
-  New: it => !!it.mark,
+  Show: (it, v) => v === 'new' ? !!it.mark : v === 'starred' ? stars.has(it.key) : true,
 };
+// Starred projects: kept on this device, per sheet, until unstarred (signing out keeps them).
+const STARS = `stars_${sheet[0]}`;
+let stars = new Set();
+try { stars = new Set(JSON.parse(localStorage.getItem(STARS)) || []); } catch (e) { /* bad value: none starred */ }
 
 const pinCache = {};
-function pin(layer, icon, mark) {
-  const key = layer + icon + (mark ? '*' : '');
+function pin(layer, icon, mark, name) {
+  const key = [layer, icon, mark ? '*' : '', name].join('|');
   if (!pinCache[key]) {
     const [, bg, fg] = LAYERS[layer];
     pinCache[key] = L.divIcon({
       className: '', iconSize: [28, 28], iconAnchor: [14, 34], popupAnchor: [0, -32],
       html: `<div class="pin" style="background:${bg}"><span class="material-symbols-outlined" style="color:${fg}">${icon}</span></div>` +
-        (mark ? '<i class="badge"></i>' : ''),
+        (mark ? '<i class="badge"></i>' : '') + (name ? `<span class="plabel">${esc(name)}</span>` : ''),
     });
   }
   return pinCache[key];
@@ -289,7 +307,8 @@ function popup(r) {
   const dest = encodeURIComponent(`${r.Lat},${r.Lng}`);
   return `<h3>${esc(r['Name'] || 'Untitled')}</h3><dl>${linkPhones(rows)}</dl>` +
     `<a class="directions" href="https://www.google.com/maps/dir/?api=1&destination=${dest}" target="_blank" rel="noopener">Directions ↗</a>` +
-    (r['Address'] ? `<button type="button" class="copy" data-copy="${esc(r['Address'])}">Copy address</button>` : '');
+    (r['Address'] ? `<button type="button" class="copy" data-copy="${esc(r['Address'])}">Copy address</button>` : '') +
+    `<button type="button" class="star" data-k="${esc(keyOf(r))}" aria-pressed="false">☆ Star</button>`;
 }
 
 // Turns US phone numbers (512-555-0100, (512) 555 0100, +1 512.555.0100) in escaped HTML into tap-to-call links.
@@ -377,6 +396,17 @@ async function copyText(text, done) {
 map.on('popupopen', e => {
   const btn = e.popup.getElement().querySelector('.copy');
   if (btn) btn.onclick = () => copyText(btn.dataset.copy, 'Address copied.');
+  const star = e.popup.getElement().querySelector('.star');
+  if (!star) return;
+  const k = star.dataset.k;
+  const paint = () => { star.textContent = stars.has(k) ? '★ Starred' : '☆ Star'; star.setAttribute('aria-pressed', stars.has(k)); };
+  paint();
+  star.onclick = () => {
+    stars.has(k) ? stars.delete(k) : stars.add(k);
+    localStorage.setItem(STARS, JSON.stringify([...stars]));
+    paint();
+    refreshShowMenu();
+  };
 });
 async function share() {
   const url = location.href;
@@ -425,7 +455,8 @@ function normalize(r) {
 // Nearby pins merge into numbered bubbles that split apart as you zoom in; pins at one spot fan out on click.
 const cluster = L.markerClusterGroup({ maxClusterRadius: 50, chunkedLoading: true }).addTo(map);
 const tiersKey = `tiers_${sheet[0]}`; // ticked tiers, remembered per sheet on this device
-let items = []; // { r, marker, layer, text, value }
+let items = []; // { r, key, marker, layer, text, mark, value }
+let lastListed = []; // what the list shows (all of it, not just the first LIST_LIMIT), for Download list
 
 // Show only pins and list rows that are in a checked tier, pass every dropdown and contain every search word.
 function render() {
@@ -459,26 +490,39 @@ function render() {
   selAll.hidden = ticks === boxes.length;
   deselAll.hidden = ticks === 0;
   const narrowed = words.length || picks.length;
-  const total = shown.reduce((sum, it) => sum + it.value, 0); // total Project Value of what's shown
-  $('count').textContent = !on.some(Boolean) ? 'Select a tier to show projects.'
-    : !shown.length && narrowed ? 'No projects match.'
-    : `${shown.length} of ${items.length} projects` + (total ? ` · ${money(total)}` : '') + (shown.length > LIST_LIMIT ? ` · first ${LIST_LIMIT} listed` : '');
-  if (narrowed) $('count').insertAdjacentHTML('beforeend', '<button type="button" class="clear">Clear filters</button>');
   // List order: the Sort dropdown. `items` is already tier-then-value; the others re-sort a copy.
   const sort = $('sort').value;
   const miles = it => here ? here.distanceTo(it.marker.getLatLng()) / 1609.34 : 0;
-  const listed = sort === 'name' ? [...shown].sort((a, b) => a.r['Name'].localeCompare(b.r['Name'], undefined, { numeric: true }))
+  let listed = sort === 'name' ? [...shown].sort((a, b) => a.r['Name'].localeCompare(b.r['Name'], undefined, { numeric: true }))
     : sort === 'start' ? [...shown].sort((a, b) => when(a.r['Start Date']) - when(b.r['Start Date']) || a.i - b.i)
     : sort === 'near' && here ? [...shown].sort((a, b) => miles(a) - miles(b))
     : shown;
+  // "Only what's on the map": the list follows the map as it moves; the pins still show every match.
+  const inView = $('inview').checked;
+  if (inView) { const box = map.getBounds(); listed = listed.filter(it => box.contains(it.marker.getLatLng())); }
+  lastListed = listed;
+  $('csv').disabled = !listed.length;
+  const total = listed.reduce((sum, it) => sum + it.value, 0); // total Project Value of what's listed
+  $('count').textContent = !on.some(Boolean) ? 'Select a tier to show projects.'
+    : !shown.length && narrowed ? 'No projects match.'
+    : inView && !listed.length ? `None of the ${shown.length} matches are on this part of the map. Zoom out or move the map.`
+    : (inView ? `${listed.length} on the map here · ${shown.length} of ${items.length} match` : `${shown.length} of ${items.length} projects`) +
+      (total ? ` · ${money(total)}` : '') + (listed.length > LIST_LIMIT ? ` · first ${LIST_LIMIT} listed` : '');
+  if (narrowed) $('count').insertAdjacentHTML('beforeend', '<button type="button" class="clear">Clear filters</button>');
+  // Nothing matches the search: offer to look it up as a place (a town or address) instead.
+  if (!shown.length && words.length && on.some(Boolean)) {
+    const q = $('q').value.trim();
+    $('count').insertAdjacentHTML('beforeend', `<button type="button" class="place" data-q="${esc(q)}">Go to “${esc(q)}” on the map</button>`);
+  }
   put('sort', sort);
+  put('view', inView ? '1' : '');
   history.replaceState(null, '', '?' + url);
   $('list').innerHTML = listed.slice(0, LIST_LIMIT).map(it => {
     const meta = [sort === 'near' && here ? `${miles(it).toFixed(1)} mi` : '', sort === 'start' ? it.r['Start Date'] : '',
       it.r['Project Value'], it.r['Category']].filter(Boolean).map(esc).join(' · ');
     return `<li><button type="button" data-i="${it.i}"><span class="swatch" style="background:${LAYERS[it.layer][1]}"></span>` +
-      `<span class="name">${esc(it.r['Name'] || 'Untitled')}${it.mark ? `<span class="tag">${it.mark === 'new' ? 'New' : 'Updated'}</span>` : ''}</span>${meta ? `<span class="meta">${meta}</span>` : ''}</button></li>`;
-  }).join('') + (shown.length > LIST_LIMIT ? `<li class="more">${shown.length - LIST_LIMIT} more on the map. Search to narrow the list.</li>` : '');
+      `<span class="name">${esc(it.r['Name'] || 'Untitled')}${stars.has(it.key) ? '<span class="starred" aria-label="starred">★</span>' : ''}${it.mark ? `<span class="tag">${it.mark === 'new' ? 'New' : 'Updated'}</span>` : ''}</span>${meta ? `<span class="meta">${meta}</span>` : ''}</button></li>`;
+  }).join('') + (listed.length > LIST_LIMIT ? `<li class="more">${listed.length - LIST_LIMIT} more on the map. Search to narrow the list.</li>` : '');
   return shown;
 }
 
@@ -505,6 +549,42 @@ $('list').onclick = e => {
 let timer;
 $('q').oninput = () => { clearTimeout(timer); timer = setTimeout(() => fit(render()), 120); };
 $('tiers').onchange = () => fit(render());
+$('inview').onchange = () => render();
+map.on('moveend', () => { if ($('inview').checked) render(); });
+// Names beside the pins from street level in.
+map.on('zoomend', () => map.getContainer().classList.toggle('labels', map.getZoom() >= 15));
+
+// Download list: the listed projects as a spreadsheet (CSV) with the popup's columns.
+$('csv').onclick = () => {
+  const cols = ['Name', ...FIELDS, 'Lat', 'Lng'];
+  const cell = v => {
+    let t = String(v ?? '');
+    if (/^[=+\-@\t\r]/.test(t) && !/^-?\d+(\.\d+)?$/.test(t)) t = "'" + t; // so Excel doesn't run a cell as a formula
+    return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+  };
+  const csv = [cols, ...lastListed.map(it => cols.map(c => it.r[c]))].map(row => row.map(cell).join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv' })); // the BOM makes Excel read it as UTF-8
+  a.download = `${sheet[1]} projects ${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+};
+
+// Go to a place: looks the search text up with OpenStreetMap's free place search (only when the button is pressed),
+// clears the search so the projects around it show, and moves the map there.
+async function findPlace(q) {
+  flash(`Looking for ${q}…`);
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=us&q=${encodeURIComponent(q)}`);
+    const [hit] = await res.json();
+    if (!hit) return flash(`Couldn't find a place called ${q}.`);
+    $('q').value = '';
+    render();
+    const [south, north, west, east] = hit.boundingbox.map(Number);
+    map.fitBounds([[south, west], [north, east]], { maxZoom: 15 });
+    status.textContent = '';
+  } catch (err) { flash("Couldn't look up places right now."); }
+}
 $('filters').onchange = () => fit(render());
 // Sorting only reorders the list, so the map stays put. "Nearest" asks for the location first if needed.
 $('sort').onchange = () => {
@@ -513,6 +593,8 @@ $('sort').onchange = () => {
 };
 // Clears the search and dropdowns; the tier boxes stay as they are.
 $('count').onclick = e => {
+  const place = e.target.closest('.place');
+  if (place) return findPlace(place.dataset.q);
   if (!e.target.closest('.clear')) return;
   $('q').value = '';
   $('filters').querySelectorAll('select').forEach(s => { s.value = ''; });
@@ -625,14 +707,26 @@ function trackAge(reply) {
   if (reply?.updated) { showAge(reply.updated); ageTimer = setInterval(() => showAge(reply.updated), 60000); }
 }
 
-// The Start and New dropdowns, each only when it would do something.
+// The Start and Show dropdowns, each only when it would do something.
+const menu = (f, label, opts, cur) => `<select data-f="${f}" aria-label="${label}">` + opts.map(([v, text]) =>
+  `<option value="${v}"${v && v === cur ? ' selected' : ''}>${text}</option>`).join('') + '</select>';
+function showMenu(cur) {
+  const changed = items.filter(it => it.mark).length, starred = items.filter(it => stars.has(it.key)).length;
+  if (!changed && !starred) return '';
+  return menu('Show', 'Show only new or starred projects', [['', 'Any project'],
+    ...(changed ? [['new', `New or updated (${changed})`]] : []), ...(starred ? [['starred', `Starred (${starred})`]] : [])], cur);
+}
 function special(params) {
-  const menu = (f, label, opts) => `<select data-f="${f}" aria-label="${label}">` + opts.map(([v, text]) =>
-    `<option value="${v}"${v && v === params.get(f.toLowerCase()) ? ' selected' : ''}>${text}</option>`).join('') + '</select>';
-  const changed = items.filter(it => it.mark).length;
   return (items.some(it => isFinite(when(it.r['Start Date']))) ? menu('Start', 'Filter by start date', [['', 'Any start'],
-    ['3', 'Starts within 3 months'], ['6', 'Starts within 6 months'], ['12', 'Starts within 12 months'], ['started', 'Already started']]) : '') +
-    (changed ? menu('New', 'Show new or updated projects', [['', 'Any project'], ['1', `New or updated (${changed})`]]) : '');
+    ['3', 'Starts within 3 months'], ['6', 'Starts within 6 months'], ['12', 'Starts within 12 months'], ['started', 'Already started']],
+    params.get('start')) : '') + showMenu(params.get('show'));
+}
+// After starring or unstarring: update the Show dropdown's counts (it appears with the first star) and the list.
+function refreshShowMenu() {
+  const old = $('filters').querySelector('[data-f="Show"]');
+  const html = showMenu(old?.value || '');
+  if (old) old.outerHTML = html; else $('filters').insertAdjacentHTML('beforeend', html);
+  render();
 }
 
 // Builds the pins, list and filters from the sheet's rows. `again`: replacing the saved copy, so keep the
@@ -652,10 +746,10 @@ function show(reply, again) {
   for (const r of data.map(normalize)) {
     const lat = parseFloat(r.Lat), lng = parseFloat(r.Lng);
     if (!isFinite(lat) || !isFinite(lng)) { missing++; continue; }
-    const layer = layerFor(r), mark = marks[keyOf(r)]?.[0];
-    const marker = L.marker([lat, lng], { icon: pin(layer, iconFor(r), mark), title: r['Name'] || '' }).bindPopup(popup(r));
+    const key = keyOf(r), layer = layerFor(r), mark = marks[key]?.[0];
+    const marker = L.marker([lat, lng], { icon: pin(layer, iconFor(r), mark, r['Name']), title: r['Name'] || '' }).bindPopup(popup(r));
     const text = SEARCH_FIELDS.map(f => r[f] || '').join(' ').toLowerCase();
-    items.push({ r, marker, layer, text, mark, value: dollars(r['Project Value']) });
+    items.push({ r, key, marker, layer, text, mark, value: dollars(r['Project Value']) });
   }
   // List order: tier, then biggest project value first.
   items.sort((a, b) => a.layer - b.layer || b.value - a.value || a.r['Name'].localeCompare(b.r['Name']));
@@ -671,6 +765,7 @@ function show(reply, again) {
   if (params.has('tiers')) saved = params.get('tiers').split(',').filter(Boolean).map(Number);
   $('q').value = params.get('q') || '';
   if ([...$('sort').options].some(o => o.value && o.value === params.get('sort'))) $('sort').value = params.get('sort');
+  $('inview').checked = params.get('view') === '1';
   $('filters').innerHTML = FILTERS.map(f => {
     const vals = [...new Set(items.map(it => String(it.r[f] || '').trim()).filter(Boolean))].sort();
     if (vals.length < 2) return '';
