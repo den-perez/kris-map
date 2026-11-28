@@ -276,7 +276,10 @@ const $ = id => document.getElementById(id);
 const status = $('status'), panel = $('panel'), toggle = $('toggle');
 const params = new URLSearchParams(location.search);
 const sheet = SHEETS.find(s => s[0] === params.get('sheet')) || SHEETS[0];
-const src = params.get('src') || sheet[2]; // ?src= lets you test with a local JSON file
+// ?src= points the map at a local test file, honored only on this computer: on the live site it would let a
+// crafted link send the visitor's sign-in token to someone else's server.
+const local = ['localhost', '127.0.0.1'].includes(location.hostname);
+const src = (local && params.get('src')) || sheet[2];
 document.title = `${sheet[1]} Projects Map`;
 
 // Sheet switcher: reloads the page with ?sheet=<key>, so each view has its own shareable link.
