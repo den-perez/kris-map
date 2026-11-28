@@ -31,9 +31,11 @@
   #tiers { border: 0; padding: 8px 0 4px; display: grid; gap: 2px; }
   #tiers label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
   #tiers .n { margin-left: auto; color: #666; font-variant-numeric: tabular-nums; }
-  #all { justify-self: start; font: inherit; font-size: 13px; color: #0277BD; background: none; border: 0; padding: 2px 0; cursor: pointer; }
-  #all:hover { text-decoration: underline; }
-  #all:focus-visible { outline: 2px solid #0288D1; outline-offset: 2px; border-radius: 4px; }
+  #all { justify-self: start; display: flex; gap: 16px; }
+  #all[hidden], #all button[hidden] { display: none; }
+  #all button { font: inherit; font-size: 13px; color: #0277BD; background: none; border: 0; padding: 2px 0; cursor: pointer; }
+  #all button:hover { text-decoration: underline; }
+  #all button:focus-visible { outline: 2px solid #0288D1; outline-offset: 2px; border-radius: 4px; }
   #count { color: #666; font-size: 13px; padding: 6px 0; border-bottom: 1px solid #eee; }
   #list { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex: 1; }
   #list button { all: unset; box-sizing: border-box; width: 100%; display: grid; grid-template-columns: 10px 1fr; gap: 2px 8px;
@@ -57,7 +59,7 @@
     #tiers label { min-height: 40px; gap: 10px; font-size: 15px; }
     #tiers input[type=checkbox] { width: 20px; height: 20px; margin: 0; }
     #tiers .swatch { width: 12px; height: 12px; }
-    #all { font-size: 15px; padding: 8px 0; }
+    #all button { font-size: 15px; padding: 8px 0; }
   }
 
   #status { position: absolute; z-index: 1000; left: 50%; bottom: 24px; transform: translateX(-50%);
@@ -117,7 +119,7 @@
   <select id="sheet" aria-label="Choose sheet"></select>
   <input id="q" type="search" placeholder="Search name, contractor, address…" aria-label="Search projects" autocomplete="off" list="suggest"><datalist id="suggest"></datalist>
   <div id="filters"></div>
-  <fieldset id="tiers" aria-label="Show tiers"><button id="all" type="button" hidden>Deselect all</button></fieldset>
+  <fieldset id="tiers" aria-label="Show tiers"><div id="all" hidden><button type="button" data-all="1">Select all</button><button type="button" data-all="">Deselect all</button></div></fieldset>
   <label id="sortrow">Sort <select id="sort">
     <option value="">Tier, then value</option>
     <option value="name">Name</option>
@@ -403,7 +405,11 @@ function render() {
   $('filters').querySelectorAll('select').forEach(s => { put(s.dataset.f.toLowerCase(), s.value); s.classList.toggle('on', !!s.value); });
   $('tiers').querySelectorAll('.n').forEach(n => { n.textContent = counts[n.dataset.i]; });
   const boxes = $('tiers').querySelectorAll('input[type=checkbox]');
-  $('all').textContent = [...boxes].every(b => b.checked) ? 'Deselect all' : 'Select all';
+  // Both links while some tiers are ticked; only the one that would change something otherwise.
+  const ticks = [...boxes].filter(b => b.checked).length;
+  const [selAll, deselAll] = $('all').children;
+  selAll.hidden = ticks === boxes.length;
+  deselAll.hidden = ticks === 0;
   const narrowed = words.length || picks.length;
   $('count').textContent = !on.some(Boolean) ? 'Select a tier to show projects.'
     : !shown.length && narrowed ? 'No projects match.'
@@ -464,11 +470,11 @@ $('count').onclick = e => {
   fit(render());
   $('q').focus();
 };
-// Select all tiers, or deselect all when every tier is already checked.
-$('all').onclick = () => {
-  const boxes = [...$('tiers').querySelectorAll('input[type=checkbox]')];
-  const check = !boxes.every(b => b.checked);
-  boxes.forEach(b => { b.checked = check; });
+// Select all or Deselect all tiers.
+$('all').onclick = e => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  $('tiers').querySelectorAll('input[type=checkbox]').forEach(b => { b.checked = !!btn.dataset.all; });
   fit(render());
 };
 
