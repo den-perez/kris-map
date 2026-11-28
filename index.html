@@ -65,6 +65,12 @@
   .leaflet-popup-content dt { color: #666; }
   .leaflet-popup-content dd { margin: 0; }
   .leaflet-popup-content .directions { display: inline-block; margin-top: 8px; font-weight: 600; }
+  #who { padding: 8px 0; border-top: 1px solid #eee; color: #666; font-size: 12px; overflow-wrap: anywhere; }
+  #who button { font: inherit; color: #0277BD; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
+  #signin { position: fixed; z-index: 1003; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(340px, calc(100vw - 32px));
+    box-sizing: border-box; padding: 20px; background: #fff; border-radius: 10px; box-shadow: 0 4px 24px rgba(0,0,0,.25); text-align: center; }
+  #signin p { margin: 0 0 14px; }
+  #gbtn { display: flex; justify-content: center; min-height: 44px; }
   #filters { display: flex; gap: 6px; margin-top: 8px; }
   #filters:empty { display: none; }
   #filters select { flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 5px 4px; border: 1px solid #ccc; border-radius: 6px; background: #fff; }
@@ -90,18 +96,21 @@
   <fieldset id="tiers" aria-label="Show tiers"><button id="all" type="button" hidden>Deselect all</button></fieldset>
   <div id="count" aria-live="polite"></div>
   <ol id="list"></ol>
+  <div id="who" hidden></div>
 </aside>
 <button id="toggle" type="button" aria-controls="panel" aria-expanded="false">List</button>
 <div id="map"></div>
 <div id="status" role="status">Loading sheet…</div>
+<div id="signin" hidden role="dialog" aria-labelledby="signin-msg"><p id="signin-msg"></p><div id="gbtn"></div></div>
+<script src="https://accounts.google.com/gsi/client"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin=""></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" integrity="sha384-eXVCORTRlv4FUUgS/xmOyr66XBVraen8ATNLMESp92FKXLAMiKkerixTiBvXriZr" crossorigin=""></script>
 <script>
 // Sheets in the switcher: [key used in ?sheet=, label, web app URL from that sheet's Apps Script deployment].
 // The first one is the default. The web app returns only the map's columns, so the sheet itself stays private.
 const SHEETS = [
-  ['austin', 'Austin Metro', 'https://script.google.com/macros/s/AKfycbw2MlHBmuSZD5E-EsFiYWepOEqvryS6CUNzRMEpRWnSMvvwcDjvDF0VW-g5N9V78qm6/exec'],
-  ['us',     'US',           'https://script.google.com/macros/s/AKfycbyR0B6pg8n0XhYRAo2WJjqVnCmxNHezoo-0iVOxFu6S9fJRGme3BrWJG6OZ9Lq8OnDu/exec'],
+  ['austin', 'Austin Metro', 'https://script.google.com/macros/s/AKfycbzihscU42IeniteZQ1geqzj5nP9cCS_qWC8AdgcdqgtVoqDOUKQtumwkUWkzqt88GW_/exec'],
+  ['us',     'US',           'https://script.google.com/macros/s/AKfycbyc57-QEMwJ9cscKLCPwFnmPCPgdHCQhS9iZVeOhf0JwP20LRpxQQiBcS3XTiS0-V55/exec'],
 ];
 
 // [label, pin color, icon color] — pin colors match the original My Maps.
@@ -336,24 +345,57 @@ $('all').onclick = () => {
   fit(render());
 };
 
-// The web app wants the sheet's map password; it's asked once and remembered on this device.
-// shortcut: prompt() shows the password as typed, swap for a password form if that matters.
-const keyName = `mapKey_${sheet[0]}`;
-function getData(question) {
-  const key = localStorage.getItem(keyName) || prompt(question);
-  if (!key) return Promise.reject(new Error('no password'));
-  const url = new URL(src, location.href);
-  url.searchParams.set('key', key);
-  return fetch(url)
-    .then(res => { if (!res.ok) throw new Error(res.status); return res.json(); })
-    .then(data => {
-      if (data && data.error) { localStorage.removeItem(keyName); return getData(`Wrong password. Password for the ${sheet[1]} map:`); }
-      localStorage.setItem(keyName, key);
-      return data;
-    });
+// Sign in with Google: the web app only answers people whose email is on its sheet's Access tab.
+// The sign-in token lasts about an hour and is kept on this device; returning visitors are signed in again
+// automatically. CLIENT_ID is the OAuth client ID from Google Cloud; it must match the one in apps-script.gs.
+const CLIENT_ID = '208947719457-p29rh0prd0g1ktbjf0obi44l45vke2re.apps.googleusercontent.com';
+const TOKEN = 'mapToken';
+const claims = t => { try { return JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); } catch (e) { return {}; } };
+const fresh = t => t && claims(t).exp * 1000 > Date.now() + 60000; // a minute of slack for the round trip
+
+let gotToken;
+function signIn(message) {
+  if (!window.google?.accounts?.id) return Promise.reject(new Error('no google'));
+  return new Promise(resolve => {
+    gotToken = t => { status.textContent = 'Loading sheet…'; resolve(t); };
+    status.textContent = '';
+    $('signin-msg').textContent = message;
+    $('signin').hidden = false;
+    google.accounts.id.renderButton($('gbtn'), { theme: 'filled_blue', size: 'large', text: 'signin_with' });
+    google.accounts.id.prompt(); // one-tap: signs a returning visitor straight back in
+  });
+}
+if (window.google?.accounts?.id) {
+  google.accounts.id.initialize({
+    client_id: CLIENT_ID, auto_select: true,
+    callback: r => { localStorage.setItem(TOKEN, r.credential); $('signin').hidden = true; gotToken?.(r.credential); },
+  });
 }
 
-getData(`Password for the ${sheet[1]} map:`)
+async function getData(message) {
+  let token = localStorage.getItem(TOKEN);
+  if (!fresh(token)) token = await signIn(message);
+  const url = new URL(src, location.href);
+  url.searchParams.set('token', token);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(res.status);
+  const data = await res.json();
+  if (data?.error) {
+    localStorage.removeItem(TOKEN);
+    if (data.error === 'not allowed') {
+      google.accounts.id.disableAutoSelect(); // let them pick another account instead of looping
+      return getData(`${data.email} doesn't have access to the ${sheet[1]} map. Ask the map's owner to add it, or sign in with another account.`);
+    }
+    return getData('Please sign in again.');
+  }
+  const email = claims(token).email;
+  $('who').innerHTML = `Signed in as ${esc(email)} · <button type="button" id="signout">Sign out</button>`;
+  $('who').hidden = false;
+  $('signout').onclick = () => { localStorage.removeItem(TOKEN); google.accounts.id.disableAutoSelect(); location.reload(); };
+  return data;
+}
+
+getData(`Sign in with Google to see the ${sheet[1]} map.`)
   .then(data => {
     if (!Array.isArray(data) || !data.length || !('Address' in data[0])) {
       status.textContent = 'The sheet returned no projects. Check its Master tab has an Address column.';
@@ -400,7 +442,7 @@ getData(`Password for the ${sheet[1]} map:`)
   })
   // A web app error comes back as an HTML page, so res.json() lands here too.
   .catch(err => {
-    status.textContent = err.message === 'no password' ? 'This map needs a password. Reload the page to enter it.'
+    status.textContent = err.message === 'no google' ? 'Could not load Google sign-in. Check your connection or turn off blockers for this site, then reload.'
       : 'Could not load the sheet. Is its web app deployed with access "Anyone"?';
   });
 </script>

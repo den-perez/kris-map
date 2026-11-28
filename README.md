@@ -16,7 +16,7 @@ The panel on the left (the **List** button on phones) has:
 
 On the map, nearby pins merge into numbered bubbles (the number is how many projects are inside). Click a bubble or zoom in to split it. Pins at the same spot fan out when clicked. Each pin's details have a **Directions** link that opens Google Maps, and phone numbers in the details can be tapped to call. The target button under the zoom buttons centers the map on where you are (the browser asks for permission the first time).
 
-**Sharing a view:** the address bar keeps the current search, dropdowns and ticked tiers, so copying the link and sending it opens the same view for someone else. The link doesn't carry the password; they still need it. Switching sheets with the dropdown starts that sheet's view fresh.
+**Sharing a view:** the address bar keeps the current search, dropdowns and ticked tiers, so copying the link and sending it opens the same view for someone else. They still have to sign in with a Google account that's on the sheet's Access tab. Switching sheets with the dropdown starts that sheet's view fresh.
 
 ## Sheets
 
@@ -34,7 +34,7 @@ The sheet needs an `Address` column. A name column can be `Name` or `Project Nam
 3. Put that URL in the `SHEETS` list near the top of the script in `index.html` (add a new line for a new sheet).
 4. Reload the sheet. A **Map** menu appears. Run **Map → Fill coordinates**; if it says rows are left, run it again. Optional: **Map → Auto-fill every hour** so new rows get coordinates on their own.
 5. Turn off link sharing on the sheet (**Share → General access → Restricted**). The map keeps working through the web app.
-6. Run **Map → Set map password**. The map asks for it the first time someone opens it on a device and remembers it after that. Until a password is set the web app returns no data. To lock everyone out, set a new password and share it only with the people who should still have access.
+6. Add a tab named **Access** and list the Google email of each person allowed to see the map in column A, one per row (a header like `Email` in A1 is fine). Until this tab exists nobody gets any data. To remove someone, delete their row; they lose access on their next visit (at most an hour later).
 
 Rows whose address can't be found get `not found` in `Lat`. Fix the address, clear that cell, and run Fill coordinates again.
 
@@ -46,7 +46,16 @@ Rows whose address can't be found get `not found` in `Lat`. Fix the address, cle
 
 Only the columns in `PUBLIC_COLUMNS` at the top of `apps-script.gs` leave the sheet: names, address, category, tier, status, zone, dates, contractor, value, notes, icon and coordinates. Other columns and other tabs stay private. To hide a column (for example `Notes`), remove it from that list and redeploy as above.
 
-The map page and web app URL are public, but the web app hands out data only with the map password (each sheet has its own). Anyone you give the password can see everything the map shows, and can pass it on, so change it if it spreads too far. The password is remembered in the browser; clear the site's data to forget it.
+The map page and web app URL are public, but the web app hands out data only to visitors signed in with Google whose email is on that sheet's **Access** tab. Each sheet has its own list. Viewers never get access to the sheet itself. They stay signed in on that device for about an hour at a time, renewed automatically; **Sign out** at the bottom of the panel ends it.
+
+### Google sign-in setup (once)
+
+The sign-in button needs an OAuth client ID from Google Cloud:
+
+1. https://console.cloud.google.com → create a project (e.g. "Projects Map").
+2. **APIs & Services → OAuth consent screen**: External, app name, your email. No scopes needed.
+3. **APIs & Services → Credentials → Create credentials → OAuth client ID** → Web application. Under **Authorized JavaScript origins** add `https://den-perez.github.io`.
+4. Put the Client ID (ends in `.apps.googleusercontent.com`) in `CLIENT_ID` in both `index.html` and `apps-script.gs`, and redeploy each sheet's script (new version).
 
 ## Pins
 

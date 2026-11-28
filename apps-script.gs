@@ -1,7 +1,7 @@
 // Paste into the sheet: Extensions → Apps Script. Two jobs:
 // 1. A "Map" menu that fills Lat/Lng columns on the Master tab from the Address column.
 // 2. doGet(): deployed as a web app, it hands the map the Master tab's PUBLIC_COLUMNS as JSON,
-//    so the sheet itself can stay private. It answers only requests carrying the map password.
+//    so the sheet itself can stay private. It answers only visitors signed in with an email on the Access tab.
 const TAB = 'Master';
 
 // Only these columns leave the sheet. Remove one here (e.g. 'Notes') to keep it off the map.
@@ -10,21 +10,38 @@ const PUBLIC_COLUMNS = ['Name', 'Project Name', 'Record Type', 'Category', 'Tier
   'Status', 'Zone', 'Address', 'Start Date', 'End Date', 'General Contractor', 'Project Value',
   'Notes', 'Icon', 'Lat', 'Lng'];
 
-// The map must send ?key=<password>, set with Map → Set map password. No password set = no data.
+// Who may see the map: visitors sign in with Google on the map page, which sends their sign-in token
+// (?token=). Only emails listed in column A of the Access tab get data. No Access tab = nobody.
+// CLIENT_ID is the OAuth client ID from Google Cloud; it must match CLIENT_ID in index.html.
+const CLIENT_ID = '208947719457-p29rh0prd0g1ktbjf0obi44l45vke2re.apps.googleusercontent.com';
+const ACCESS_TAB = 'Access';
+
 function doGet(e) {
-  const want = PropertiesService.getScriptProperties().getProperty('MAP_KEY');
-  const ok = want && e && e.parameter.key === want;
-  return ContentService.createTextOutput(ok ? cachedRowsJson() : '{"error":"wrong password"}')
+  const email = verifiedEmail(e && e.parameter.token);
+  const denied = !email ? { error: 'signin' }
+    : !allowedEmails().has(email) ? { error: 'not allowed', email } : null;
+  return ContentService.createTextOutput(denied ? JSON.stringify(denied) : cachedRowsJson())
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-function setMapPassword() {
-  const ui = SpreadsheetApp.getUi();
-  const r = ui.prompt('Map password', 'Anyone opening the map will need this. Changing it signs everyone out.', ui.ButtonSet.OK_CANCEL);
-  const pw = r.getResponseText().trim();
-  if (r.getSelectedButton() !== ui.Button.OK || !pw) return;
-  PropertiesService.getScriptProperties().setProperty('MAP_KEY', pw);
-  ui.alert('Map password saved.');
+// Asks Google whether the token is genuine, unexpired and made for this map; returns its email or ''.
+function verifiedEmail(token) {
+  if (!token) return '';
+  const res = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(token),
+    { muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) return '';
+  const t = JSON.parse(res.getContentText());
+  const ok = t.aud === CLIENT_ID && String(t.email_verified) === 'true' &&
+    ['accounts.google.com', 'https://accounts.google.com'].includes(t.iss) && Number(t.exp) * 1000 > Date.now();
+  return ok ? String(t.email).trim().toLowerCase() : '';
+}
+
+// Column A of the Access tab, one email per row; a header like "Email" is skipped (no @).
+function allowedEmails() {
+  const tab = SpreadsheetApp.getActive().getSheetByName(ACCESS_TAB);
+  if (!tab || tab.getLastRow() < 1) return new Set();
+  return new Set(tab.getRange(1, 1, tab.getLastRow(), 1).getDisplayValues()
+    .map(([v]) => v.trim().toLowerCase()).filter(v => v.includes('@')));
 }
 
 // The map's data is kept in Apps Script's cache so most page loads skip reading the sheet.
@@ -81,7 +98,6 @@ function onOpen() {
     .addItem('Fill coordinates', 'fillCoordinates')
     .addItem('Auto-fill every hour', 'installHourlyTrigger')
     .addItem('Import coordinates', 'importCoordinates')
-    .addItem('Set map password', 'setMapPassword')
     .addToUi();
 }
 
