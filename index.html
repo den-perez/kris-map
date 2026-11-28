@@ -169,15 +169,15 @@ const early = credential() && fetch(dataUrl(credential()));
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin=""></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" integrity="sha384-eXVCORTRlv4FUUgS/xmOyr66XBVraen8ATNLMESp92FKXLAMiKkerixTiBvXriZr" crossorigin=""></script>
 <script>
-// [label, pin color, icon color] — tier colors match the original My Maps; Facility and Contractor pins are purple and black so they stand out from the map.
+// [label, pin color, icon color] — tier colors match the original My Maps, except Tier 2 is brown, not olive, so it doesn't blend with the green clusters; Facility and Contractor pins are purple and black so they stand out from the map; Completed/Cancelled is a muted blue-gray, unlike Tier 1 red and the orange clusters.
 const LAYERS = [
   ['Tier 1 ($1B+)',          '#FF5252', '#fff'],
-  ['Tier 2 ($500M–1B)',      '#AFB42B', '#fff'],
+  ['Tier 2 ($500M–1B)',      '#6D4C41', '#fff'],
   ['Tier 3 ($100–500M)',     '#0097A7', '#fff'],
   ['Tier 4 / No Value',      '#0288D1', '#fff'],
   ['Facility Accounts',      '#8E24AA', '#fff'],
   ['Contractors',            '#212121', '#fff'],
-  ['Completed/Cancelled',    '#E65100', '#fff'],
+  ['Completed/Cancelled',    '#546E7A', '#fff'],
 ];
 
 // Icon for each Category. An "Icon" column in the sheet overrides this per row.
