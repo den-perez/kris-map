@@ -10,13 +10,19 @@ The panel on the left (the **List** button on phones) has:
 
 - **Sheet dropdown** to switch between sheets.
 - **Search box.** It matches name, address, category, contractor, status, zone, value and notes. Several words must all match: `hospital round rock`. For a state, search its abbreviation (`TX`), since addresses don't spell it out. As you type it suggests matching project names, contractors, categories, zones and statuses; pick one to search for it.
+- **Clear filters** appears under the dropdowns whenever a search or dropdown is narrowing the list; it resets those (the tier boxes stay as they are).
 - **Status, Category and Zone dropdowns** to show only one value of each (e.g. Active hospitals). A dropdown turns blue while it's narrowing the list. A dropdown only appears when the sheet has at least two different values in that column.
 - **Tier checkboxes** to show or hide each layer, with how many projects match the search in each. The first time, all start unchecked, so the map is empty until you pick a tier (on phones the panel opens by itself so the boxes are in view). After that each device remembers the tiers you last had ticked, per sheet. Each time you check or uncheck one, or change the search, the map zooms to fit the pins shown.
-- **Project list**, sorted by tier and then largest value first. Click a project to highlight it, zoom to it, open its details and make its pin bounce. Only the first 200 are listed; search to narrow it down. The map always shows every match.
+- **Sort** dropdown for the list: tier then value (default), name, start date, or nearest to me (asks for your location and shows miles).
+- **Project list**, sorted by the Sort dropdown. Click a project to highlight it, zoom to it, open its details and make its pin bounce. Only the first 200 are listed; search to narrow it down. The map always shows every match.
 
-On the map, nearby pins merge into numbered bubbles (the number is how many projects are inside). Click a bubble or zoom in to split it. Pins at the same spot fan out when clicked. Each pin's details have a **Directions** link that opens Google Maps, and phone numbers in the details can be tapped to call. The target button under the zoom buttons centers the map on where you are (the browser asks for permission the first time). The **Satellite** button below it switches to aerial photos with road and place labels (and **Map** switches back); each device remembers the choice.
+On phones, a **Key** in the bottom-left corner of the map shows what each pin color means (tap to open or close it). On the map, nearby pins merge into numbered bubbles (the number is how many projects are inside). Click a bubble or zoom in to split it. Pins at the same spot fan out when clicked. Each pin's details have a **Directions** link that opens Google Maps, and phone numbers in the details can be tapped to call. The target button under the zoom buttons centers the map on where you are (the browser asks for permission the first time). The **Satellite** button below it switches to aerial photos with road and place labels (and **Map** switches back); each device remembers the choice.
 
-**Sharing a view:** the address bar keeps the current search, dropdowns and ticked tiers, so copying the link and sending it opens the same view for someone else. They still have to sign in with a Google account that's on the sheet's Access tab. Switching sheets with the dropdown starts that sheet's view fresh.
+**How fresh the data is:** the bottom of the panel says "Data as of N min ago", which is when the web app last read the sheet (it keeps a copy for up to 10 minutes).
+
+**Add to Home Screen:** on a phone, use the browser's Share menu → **Add to Home Screen** (iPhone) or **Install app** (Android). The map then opens full-screen from its own icon. The first time, sign in again inside the app.
+
+**Sharing a view:** the address bar keeps the current search, dropdowns and ticked tiers, so the link opens the same view for someone else. The **Share** button (top right) opens the phone's share sheet, or copies the link on a computer. They still have to sign in with a Google account that's on the sheet's Access tab. Switching sheets with the dropdown starts that sheet's view fresh.
 
 ## Sheets
 

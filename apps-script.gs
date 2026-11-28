@@ -58,7 +58,8 @@ function cachedRowsJson() {
     const parts = cache.getAll(keys);
     if (keys.every(k => k in parts)) return keys.map(k => parts[k]).join('');
   }
-  const json = JSON.stringify(readRows());
+  // `updated` is when the sheet was read, so the map can say how fresh the cached copy is.
+  const json = JSON.stringify({ updated: Date.now(), rows: readRows() });
   const ver = Date.now().toString(36);
   const put = {};
   for (let i = 0; i * CACHE_CHUNK < json.length; i++) put[`rows_${ver}_${i}`] = json.slice(i * CACHE_CHUNK, (i + 1) * CACHE_CHUNK);

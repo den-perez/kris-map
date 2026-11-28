@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Projects Map</title>
+<!-- "Add to Home Screen": icon, name and full-screen launch. -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<meta name="theme-color" content="#0288D1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Projects Map">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="">
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" integrity="sha384-pmjIAcz2bAn0xukfxADbZIb3t8oRT9Sv0rvO+BR5Csr6Dhqq+nZs59P0pPKQJkEV" crossorigin="">
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" integrity="sha384-wgw+aLYNQ7dlhK47ZPK7FRACiq7ROZwgFNg0m04avm4CaXS+Z9Y7nMu8yNjBKYC+" crossorigin="">
@@ -81,6 +89,18 @@
     font: 600 12px system-ui, -apple-system, sans-serif; cursor: pointer; }
   .basemap:hover { background: #f4f4f4; }
   .basemap:focus-visible { outline: 2px solid #0288D1; }
+  #sortrow { display: flex; align-items: center; gap: 6px; color: #666; font-size: 13px; padding-bottom: 6px; }
+  #sort { flex: 1; font: inherit; color: #222; padding: 4px 6px; border: 1px solid #ccc; border-radius: 6px; background: #fff; }
+  #sort:focus { outline: 2px solid #0288D1; outline-offset: 0; }
+  @media (pointer: coarse) { #sort { font-size: 16px; } }
+  #count .clear { margin-left: 6px; font: inherit; color: #0277BD; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
+  .legend { background: #fff; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.3); font-size: 12px; max-width: 200px; }
+  .legend summary { padding: 6px 10px; font-weight: 600; cursor: pointer; }
+  .legend ul { list-style: none; margin: 0; padding: 0 10px 8px; display: grid; gap: 4px; }
+  .legend li { display: flex; align-items: center; gap: 6px; }
+  @media (min-width: 701px) { .legend { display: none; } } /* the side panel already shows the colors */
+  /* Phones zoom the page when a text box under 16px is tapped; keep inputs at 16px on touch screens. */
+  @media (pointer: coarse) { #q, #sheet, #filters select { font-size: 16px; } }
   .locate { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 4px;
     background: #fff; color: #333; cursor: pointer; }
   .locate:hover { background: #f4f4f4; }
@@ -98,6 +118,12 @@
   <input id="q" type="search" placeholder="Search name, contractor, address…" aria-label="Search projects" autocomplete="off" list="suggest"><datalist id="suggest"></datalist>
   <div id="filters"></div>
   <fieldset id="tiers" aria-label="Show tiers"><button id="all" type="button" hidden>Deselect all</button></fieldset>
+  <label id="sortrow">Sort <select id="sort">
+    <option value="">Tier, then value</option>
+    <option value="name">Name</option>
+    <option value="start">Start date</option>
+    <option value="near">Nearest to me</option>
+  </select></label>
   <div id="count" aria-live="polite"></div>
   <ol id="list"></ol>
   <div id="who" hidden></div>
@@ -177,6 +203,18 @@ function iconFor(r) {
   return ICONS.has(own) ? own : CATEGORY_ICONS[(r['Category'] || '').trim()] || 'circle';
 }
 
+// "Nov 2026", "November 2026", "2026-11-15", "11/15/2026" → sortable number; blank or unreadable → Infinity (listed last).
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+function when(s) {
+  s = String(s || '').trim().toLowerCase();
+  let m = /^([a-z]{3})[a-z]*\.?\s+(\d{4})$/.exec(s);
+  if (m && MONTHS.includes(m[1])) return +m[2] * 12 + MONTHS.indexOf(m[1]);
+  if ((m = /^(\d{4})-(\d{1,2})/.exec(s))) return +m[1] * 12 + (+m[2] - 1);
+  if ((m = /^(\d{1,2})\/\d{1,2}\/(\d{4})$/.exec(s))) return +m[2] * 12 + (+m[1] - 1);
+  if ((m = /^(\d{4})$/.exec(s))) return +m[1] * 12;
+  return Infinity;
+}
+
 // "20B" → 2e10, "968.1M" → 9.681e8, "$1,200,000" → 1.2e6; anything else → 0. Used to sort the list.
 function dollars(s) {
   const m = /([\d.,]+)\s*([KMB])?/i.exec(String(s || ''));
@@ -217,19 +255,23 @@ const map = L.map('map', { zoomControl: false }).setView([30.45, -97.52], 10);
 L.control.zoom({ position: 'topright' }).addTo(map);
 
 // "Near me" button under the zoom buttons: centers the map on the viewer and drops a blue dot there.
-let me;
-function locate() {
-  if (!navigator.geolocation) { status.textContent = "This browser can't share your location."; return; }
+// Also used by "Sort: Nearest to me". `here` is the viewer's last known position.
+let me, here;
+function whereAmI() {
+  if (!navigator.geolocation) { status.textContent = "This browser can't share your location."; return Promise.reject(new Error('no location')); }
   status.textContent = 'Finding your location…';
-  navigator.geolocation.getCurrentPosition(p => {
-    const ll = [p.coords.latitude, p.coords.longitude];
-    me = me || L.circleMarker(ll, { radius: 8, color: '#fff', weight: 3, fillColor: '#1a73e8', fillOpacity: 1 })
+  return new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(p => {
+    here = L.latLng(p.coords.latitude, p.coords.longitude);
+    me = me || L.circleMarker(here, { radius: 8, color: '#fff', weight: 3, fillColor: '#1a73e8', fillOpacity: 1 })
       .bindTooltip('You are here').addTo(map);
-    me.setLatLng(ll);
-    map.setView(ll, Math.max(map.getZoom(), 12));
+    me.setLatLng(here);
     status.textContent = '';
-  }, () => { status.textContent = 'Could not get your location. Allow location access for this site and try again.'; },
-  { enableHighAccuracy: true, timeout: 15000 });
+    resolve(here);
+  }, e => { status.textContent = 'Could not get your location. Allow location access for this site and try again.'; reject(e); },
+  { enableHighAccuracy: true, timeout: 15000 }));
+}
+function locate() {
+  whereAmI().then(ll => map.setView(ll, Math.max(map.getZoom(), 12)), () => {});
 }
 L.Control.Locate = L.Control.extend({
   options: { position: 'topright' },
@@ -256,7 +298,7 @@ const satellite = L.layerGroup([
 function setBasemap(sat) {
   map.removeLayer(sat ? streets : satellite).addLayer(sat ? satellite : streets);
   localStorage.setItem('basemap', sat ? 'satellite' : 'map');
-  const btn = document.querySelector('.basemap');
+  const btn = document.querySelector(".basemap:not(.share)");
   if (btn) { btn.textContent = sat ? 'Map' : 'Satellite'; btn.setAttribute('aria-label', sat ? 'Show street map' : 'Show satellite view'); }
 }
 L.Control.Basemap = L.Control.extend({
@@ -271,6 +313,34 @@ L.Control.Basemap = L.Control.extend({
 });
 new L.Control.Basemap().addTo(map);
 setBasemap(localStorage.getItem('basemap') === 'satellite');
+
+// Share button: the phone's share sheet where there is one, otherwise copy the link. The link holds the
+// current search, filters and tiers, never the sign-in.
+function flash(msg) {
+  const before = status.textContent;
+  status.textContent = msg;
+  setTimeout(() => { if (status.textContent === msg) status.textContent = before; }, 2500);
+}
+async function share() {
+  const url = location.href;
+  if (navigator.share && matchMedia('(pointer: coarse)').matches) {
+    try { await navigator.share({ title: document.title, url }); } catch (e) { /* closed the share sheet */ }
+    return;
+  }
+  try { await navigator.clipboard.writeText(url); flash('Link copied. It opens this same view.'); }
+  catch (e) { prompt('Copy this link:', url); }
+}
+L.Control.Share = L.Control.extend({
+  options: { position: 'topright' },
+  onAdd() {
+    const bar = L.DomUtil.create('div', 'leaflet-bar');
+    bar.innerHTML = '<button type="button" class="basemap share" aria-label="Share a link to this view">Share</button>';
+    L.DomEvent.disableClickPropagation(bar);
+    bar.firstChild.onclick = share;
+    return bar;
+  },
+});
+new L.Control.Share().addTo(map);
 
 const $ = id => document.getElementById(id);
 const status = $('status'), panel = $('panel'), toggle = $('toggle');
@@ -331,14 +401,26 @@ function render() {
   put('tiers', ticked.join(','));
   put('q', $('q').value.trim());
   $('filters').querySelectorAll('select').forEach(s => { put(s.dataset.f.toLowerCase(), s.value); s.classList.toggle('on', !!s.value); });
-  history.replaceState(null, '', '?' + url);
   $('tiers').querySelectorAll('.n').forEach(n => { n.textContent = counts[n.dataset.i]; });
   const boxes = $('tiers').querySelectorAll('input[type=checkbox]');
   $('all').textContent = [...boxes].every(b => b.checked) ? 'Deselect all' : 'Select all';
+  const narrowed = words.length || picks.length;
   $('count').textContent = !on.some(Boolean) ? 'Select a tier to show projects.'
+    : !shown.length && narrowed ? 'No projects match.'
     : `${shown.length} of ${items.length} projects` + (shown.length > LIST_LIMIT ? ` · first ${LIST_LIMIT} listed` : '');
-  $('list').innerHTML = shown.slice(0, LIST_LIMIT).map(it => {
-    const meta = [it.r['Project Value'], it.r['Category']].filter(Boolean).map(esc).join(' · ');
+  if (narrowed) $('count').insertAdjacentHTML('beforeend', '<button type="button" class="clear">Clear filters</button>');
+  // List order: the Sort dropdown. `items` is already tier-then-value; the others re-sort a copy.
+  const sort = $('sort').value;
+  const miles = it => here ? here.distanceTo(it.marker.getLatLng()) / 1609.34 : 0;
+  const listed = sort === 'name' ? [...shown].sort((a, b) => a.r['Name'].localeCompare(b.r['Name'], undefined, { numeric: true }))
+    : sort === 'start' ? [...shown].sort((a, b) => when(a.r['Start Date']) - when(b.r['Start Date']) || a.i - b.i)
+    : sort === 'near' && here ? [...shown].sort((a, b) => miles(a) - miles(b))
+    : shown;
+  put('sort', sort);
+  history.replaceState(null, '', '?' + url);
+  $('list').innerHTML = listed.slice(0, LIST_LIMIT).map(it => {
+    const meta = [sort === 'near' && here ? `${miles(it).toFixed(1)} mi` : '', sort === 'start' ? it.r['Start Date'] : '',
+      it.r['Project Value'], it.r['Category']].filter(Boolean).map(esc).join(' · ');
     return `<li><button type="button" data-i="${it.i}"><span class="swatch" style="background:${LAYERS[it.layer][1]}"></span>` +
       `<span class="name">${esc(it.r['Name'] || 'Untitled')}</span>${meta ? `<span class="meta">${meta}</span>` : ''}</button></li>`;
   }).join('') + (shown.length > LIST_LIMIT ? `<li class="more">${shown.length - LIST_LIMIT} more on the map. Search to narrow the list.</li>` : '');
@@ -369,6 +451,19 @@ let timer;
 $('q').oninput = () => { clearTimeout(timer); timer = setTimeout(() => fit(render()), 120); };
 $('tiers').onchange = () => fit(render());
 $('filters').onchange = () => fit(render());
+// Sorting only reorders the list, so the map stays put. "Nearest" asks for the location first if needed.
+$('sort').onchange = () => {
+  if ($('sort').value !== 'near' || here) return render();
+  whereAmI().then(render, () => { $('sort').value = ''; render(); });
+};
+// Clears the search and dropdowns; the tier boxes stay as they are.
+$('count').onclick = e => {
+  if (!e.target.closest('.clear')) return;
+  $('q').value = '';
+  $('filters').querySelectorAll('select').forEach(s => { s.value = ''; });
+  fit(render());
+  $('q').focus();
+};
 // Select all tiers, or deselect all when every tier is already checked.
 $('all').onclick = () => {
   const boxes = [...$('tiers').querySelectorAll('input[type=checkbox]')];
@@ -421,14 +516,23 @@ async function getData(message) {
     return getData('Please sign in again.');
   }
   const email = claims(token).email;
-  $('who').innerHTML = `Signed in as ${esc(email)} · <button type="button" id="signout">Sign out</button>`;
+  $('who').innerHTML = `<span id="age"></span>Signed in as ${esc(email)} · <button type="button" id="signout">Sign out</button>`;
   $('who').hidden = false;
   $('signout').onclick = () => { localStorage.removeItem(TOKEN); google.accounts.id.disableAutoSelect(); location.reload(); };
   return data;
 }
 
+// "Data as of 3 min ago": the web app caches the sheet for up to 10 minutes, so say how old this copy is.
+function showAge(updated) {
+  const mins = Math.floor((Date.now() - updated) / 60000);
+  $('age').textContent = `Data as of ${mins < 1 ? 'just now' : mins < 60 ? `${mins} min ago` : new Date(updated).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · `;
+}
+
 getData(`Sign in with Google to see the ${sheet[1]} map.`)
-  .then(data => {
+  .then(reply => {
+    // Newer sheet scripts send { updated, rows }; older ones send just the rows.
+    const data = Array.isArray(reply) ? reply : reply?.rows;
+    if (reply?.updated) { showAge(reply.updated); setInterval(() => showAge(reply.updated), 60000); }
     if (!Array.isArray(data) || !data.length || !('Address' in data[0])) {
       status.textContent = 'The sheet returned no projects. Check its Master tab has an Address column.';
       return;
@@ -455,6 +559,7 @@ getData(`Sign in with Google to see the ${sheet[1]} map.`)
     try { saved = JSON.parse(localStorage.getItem(tiersKey)) || []; } catch (e) { /* bad value: start empty */ }
     if (params.has('tiers')) saved = params.get('tiers').split(',').filter(Boolean).map(Number);
     $('q').value = params.get('q') || '';
+    if ([...$('sort').options].some(o => o.value && o.value === params.get('sort'))) $('sort').value = params.get('sort');
     $('filters').innerHTML = FILTERS.map(f => {
       const vals = [...new Set(items.map(it => String(it.r[f] || '').trim()).filter(Boolean))].sort();
       if (vals.length < 2) return '';
@@ -466,8 +571,21 @@ getData(`Sign in with Google to see the ${sheet[1]} map.`)
       items.some(it => it.layer === i) ? `<label><input type="checkbox" value="${i}"${saved.includes(i) ? ' checked' : ''}>` +
         `<span class="swatch" style="background:${color}"></span>${esc(label)}<span class="n" data-i="${i}"></span></label>` : '').join(''));
     $('all').hidden = false;
+    // Phones: a collapsible color key on the map, since the panel with the swatches is usually closed.
+    const Legend = L.Control.extend({
+      options: { position: 'bottomleft' },
+      onAdd() {
+        const box = L.DomUtil.create('details', 'legend');
+        box.innerHTML = '<summary>Key</summary><ul>' + LAYERS.map(([label, color], i) => items.some(it => it.layer === i)
+          ? `<li><span class="swatch" style="background:${color}"></span>${esc(label)}</li>` : '').join('') + '</ul>';
+        L.DomEvent.disableClickPropagation(box);
+        return box;
+      },
+    });
+    new Legend().addTo(map);
     const shown = render();
     fit(shown.length ? shown : items); // nothing ticked: still frame the sheet's area
+    if ($('sort').value === 'near') $('sort').onchange(); // a shared "nearest" link: get this viewer's location
     // On a phone an empty map gives no clue what to do, so open the panel with the tier boxes.
     if (!shown.length && narrow.matches) setPanel(true);
     status.textContent = missing ? `${missing} of ${data.length} rows have no Lat/Lng yet. Run Map → Fill coordinates in the sheet.` : '';
