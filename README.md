@@ -19,11 +19,13 @@ The panel on the left (the **List** button on phones) has:
 - **Count line**: how many projects match and their total `Project Value` (e.g. "38 of 300 projects · $4.2B"). Rows without a value count as $0.
 - **Project list**, sorted by the Sort dropdown. Click a project to highlight it, zoom to it, open its details and make its pin bounce. Only the first 200 are listed; search to narrow it down. The map always shows every match.
 
-On phones, a **Key** in the bottom-left corner of the map shows what each pin color means (tap to open or close it). On the map, nearby pins merge into numbered bubbles (the number is how many projects are inside). Click a bubble or zoom in to split it. Pins at the same spot fan out when clicked. Each pin's details have a **Directions** link that opens Google Maps, and phone numbers in the details can be tapped to call. The target button under the zoom buttons centers the map on where you are (the browser asks for permission the first time). The **Satellite** button below it switches to aerial photos with road and place labels (and **Map** switches back); each device remembers the choice.
+On phones, a **Key** in the bottom-left corner of the map shows what each pin color means (tap to open or close it). On the map, nearby pins merge into numbered bubbles (the number is how many projects are inside). Click a bubble or zoom in to split it. Pins at the same spot fan out when clicked. Each pin's details have a **Directions** link that opens Google Maps and a **Copy address** button, and phone numbers in the details can be tapped to call. The target button under the zoom buttons centers the map on where you are (the browser asks for permission the first time). The **Satellite** button below it switches to aerial photos with road and place labels (and **Map** switches back); each device remembers the choice.
 
 **How fresh the data is:** the bottom of the panel says "Data as of N min ago", which is when the web app last read the sheet (it keeps a copy for up to 10 minutes).
 
 **Fast reopening:** each device keeps the last copy of each sheet's map data it loaded (typically well under 1 MB). While you're signed in, the map shows that copy at once and swaps in the sheet's latest a few seconds later if anything changed, without moving the map or losing your filters. Without a connection it keeps showing the saved copy and says so. **Sign out** deletes the saved copies, and so does losing access (the page reloads to the sign-in screen).
+
+**Offline:** after one visit with a connection, the map opens with no signal too: the page, the map code, the map tiles you've already looked at (up to about 1,000, roughly 30 MB) and the last saved data. New data and signing in still need a connection. When you're online, the newest version of the page always loads; `sw.js` handles this.
 
 **Add to Home Screen:** on a phone, use the browser's Share menu → **Add to Home Screen** (iPhone) or **Install app** (Android). The map then opens full-screen from its own icon. The first time, sign in again inside the app.
 
@@ -70,7 +72,7 @@ The sign-in button needs an OAuth client ID from Google Cloud:
 
 ## Pins
 
-- Layers come from `Record Type` and `Tier / Priority`: Tier 1–4, Facility Accounts, Contractors. A row whose `Status` contains "Completed" or "Cancelled" goes to the Completed/Cancelled layer instead. Empty layers are hidden. Tier pin colors match the original My Maps; Facility Accounts are purple and Contractors black so they stand out from the map. Completed/Cancelled pins are blue-gray. Cluster bubbles are white with a dark ring, so they can't be mistaken for a pin color.
+- Layers come from `Record Type` and `Tier / Priority`: Tier 1–4, Facility Accounts, Contractors. A row whose `Status` contains "Completed" or "Cancelled" goes to the Completed/Cancelled layer instead. Empty layers are hidden. Tier pin colors match the original My Maps, except Tier 2 is magenta (olive looked like the green cluster bubbles); Facility Accounts are purple and Contractors black so they stand out from the map. Completed/Cancelled pins are blue-gray.
 - The icon inside each pin comes from `Category` (factory for Manufacturing, school for Education, and so on).
 
 ### Choosing an icon for a row
